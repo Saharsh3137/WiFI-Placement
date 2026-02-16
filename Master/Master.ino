@@ -32,15 +32,15 @@ int totalPacketsLost = 0;
 unsigned long lastArrivalTime = 0;
 int jitter = 0;
 unsigned long lastRecvTime = 0;      
-const unsigned long TIMEOUT_MS = 2000; 
+const unsigned long TIMEOUT_MS = 5000; // Increased to 5s for stability
 
 // --- SMOOTHING VARIABLES ---
-int displayLatency = 0;       // The "Clean" number we show
-unsigned long lastGoodTime = 0; // When did we last get a real number?
+int displayLatency = 0;       
+unsigned long lastGoodTime = 0; 
 
 // --- FUNCTION DEFINITIONS ---
 
-// 1. Send To Phone (Moved ABOVE OnDataRecv to fix compiler error)
+// 1. Send To Phone
 void sendToPhone() {
   if (SerialBT.hasClient()) {
     SerialBT.print(incoming.id); SerialBT.print(",");
@@ -48,7 +48,7 @@ void sendToPhone() {
     SerialBT.print(incoming.snr); SerialBT.print(",");
     SerialBT.print(incoming.voltage/1000.0); SerialBT.print(",");
     
-    // CALCULATE AND SEND % INSTEAD OF TOTAL COUNT
+    // Send Loss %
     float lossPct = 0.0;
     if (incoming.packetId > 0) {
         lossPct = (float)totalPacketsLost / incoming.packetId * 100.0;
@@ -57,7 +57,7 @@ void sendToPhone() {
     
     SerialBT.print(",");
     SerialBT.print(jitter); SerialBT.print(",");
-    SerialBT.println(displayLatency); // Send the Smooth Latency
+    SerialBT.println(displayLatency); // Will never be 999 now
   }
 }
 
@@ -65,25 +65,19 @@ void sendToPhone() {
 void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
   unsigned long now = millis();
   
-  // Connection is Alive
   isConnected = true; 
   lastRecvTime = now; 
   
   memcpy(&incoming, incomingData, sizeof(incoming));
 
-  // --- THE FILTER LOGIC ---
+  // --- CHANGED: AGGRESSIVE FILTERING ---
+  // If the latency is valid, update it.
   if (incoming.latency != 999) {
-      // It's a REAL number (e.g., 12ms). Use it immediately.
       displayLatency = incoming.latency;
-      lastGoodTime = now;
   } 
-  else {
-      // It's a GLITCH (999ms). Ignore it!
-      // UNLESS... it's been glitching for > 1 second. Then it's real.
-      if (now - lastGoodTime > 1000) {
-          displayLatency = 999;
-      }
-  }
+  // If it IS 999 (glitch), we do NOTHING.
+  // We just keep showing the last good number (e.g. 14ms).
+  // This forces the graph to stay smooth.
 
   // Jitter Calc
   if (lastArrivalTime != 0) {
@@ -180,7 +174,7 @@ void setup() {
   
   WiFi.mode(WIFI_STA);
   
-  // Power Save Fix: MIN_MODEM allows BT + WiFi coexistence
+  // KEEP THIS! It fixes the crash.
   esp_wifi_set_ps(WIFI_PS_MIN_MODEM); 
   
   WiFi.disconnect(); 
