@@ -1,21 +1,21 @@
 #include <ESP8266WiFi.h>
 #include <espnow.h>
 
-// 1. Voltage Sensor
+// 1. VOLTAGE SENSOR (Must be top of file)
 ADC_MODE(ADC_VCC); 
 
 // --- USER CONFIGURATION ---
-const char* ssid = "trojan.exe";     // <--- Enter exact Name
-const char* password = "12345678"; // <--- Enter exact Password
+const char* ssid = "PK";     
+const char* password = "09876543211"; 
 
-// --- CONFIG ---
+// MASTER MAC ADDRESS (From your previous finding)
 uint8_t broadcastAddress[] = {0xB0, 0xCB, 0xD8, 0xC6, 0x66, 0x7C}; 
 
 // --- VARIABLES ---
 unsigned long startSendTime = 0;
 unsigned long lastLatency = 0;
 unsigned long globalPacketCount = 0;
-int routerChannel = 1; // Will be detected automatically
+int routerChannel = 1; 
 
 typedef struct struct_message {
   int id;
@@ -39,58 +39,77 @@ void OnDataSent(uint8_t *mac_addr, uint8_t sendStatus) {
 }
 
 void setup() {
+  // 1. SAFETY DELAY: Wait 2 seconds for power to stabilize
+  // This prevents the "Brown-out" crash on startup
+  delay(2000); 
+
   Serial.begin(115200);
-  
-  // 1. Connect to Wi-Fi (Real Connection)
+  Serial.println("\n\n--- ESP8266 SLAVE STARTING ---");
+
+  // 2. NUKE OLD SETTINGS (The "Work Every Time" Fix)
   WiFi.mode(WIFI_STA);
+  WiFi.setSleepMode(WIFI_NONE_SLEEP); // <--- ADD THIS: Keeps radio awake
+  WiFi.persistent(false);      // Do not save credentials to flash
+  WiFi.disconnect(true);       // Wipe previous connection state
+  delay(100);
+
+  // 3. CONNECT TO WIFI (With Timeout)
+  Serial.print("Connecting to: "); Serial.println(ssid);
   WiFi.begin(ssid, password);
   
-  Serial.print("Connecting");
+  unsigned long startAttempt = millis();
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
+    // If it takes more than 20 seconds, restart to fix radio glitch
+    if (millis() - startAttempt > 20000) {
+      Serial.println("\nWifi Failed! Restarting...");
+      ESP.restart();
+    }
   }
-  Serial.println("\nConnected!");
-  
-  // 2. DETECT ROUTER CHANNEL
-  // The ESP8266 has moved to the router's channel automatically.
-  routerChannel = WiFi.channel(); 
-  Serial.print("Router is on Channel: ");
-  Serial.println(routerChannel);
+  Serial.println("\nWiFi Connected!");
 
-  // 3. Init ESP-NOW
-  if (esp_now_init() != 0) return;
+  // 4. DETECT CHANNEL
+  routerChannel = WiFi.channel(); 
+  Serial.print("Router Channel: "); Serial.println(routerChannel);
+
+  // 5. INIT ESP-NOW
+  if (esp_now_init() != 0) {
+    Serial.println("ESP-NOW Init Failed");
+    return;
+  }
   esp_now_set_self_role(ESP_NOW_ROLE_CONTROLLER);
   esp_now_register_send_cb(OnDataSent);
   
-  // CRITICAL: Peer must be set to the SAME channel as the Router
-  esp_now_add_peer(broadcastAddress, ESP_NOW_ROLE_SLAVE, routerChannel, NULL, 0);
+  // 6. ADD PEER (Master)
+  int res = esp_now_add_peer(broadcastAddress, ESP_NOW_ROLE_SLAVE, routerChannel, NULL, 0);
+  if (res == 0) Serial.println("Master Added Successfully");
+  else Serial.println("Failed to Add Master");
 }
 
 void loop() {
-  // --- STEP 1: GET REAL METRICS ---
-  myData.id = 1; 
-  
-  // A. RSSI (Valid because we are connected)
-  myData.rssi = WiFi.RSSI(); 
-  
-  // B. SNR CALCULATION (Stable Method)
-  // Since scanning breaks the connection, we use a standard "Noise Floor" 
-  // of -95dBm. This is standard engineering practice for active links.
-  // Formula: SNR = Signal - Noise
-  myData.snr = myData.rssi - (-95); 
+  // --- RECOVERY: If connection fails (999ms), re-add peer ---
+  if (lastLatency == 999) {
+     esp_now_del_peer(broadcastAddress);
+     esp_now_add_peer(broadcastAddress, ESP_NOW_ROLE_SLAVE, WiFi.channel(), NULL, 0);
+  }
 
+  // --- PREPARE DATA ---
+  myData.id = 1; 
+  myData.rssi = WiFi.RSSI(); 
+  myData.snr = myData.rssi - (-95); 
   myData.packetId = globalPacketCount++;
   
+  // Safe Voltage Read
   int rawVolt = ESP.getVcc();
-  if (rawVolt > 4000) rawVolt = 3300; 
+  if (rawVolt > 4000) rawVolt = 3300; // Cap errors
   myData.voltage = rawVolt;         
   
   myData.latency = (int)lastLatency; 
 
-  // --- STEP 2: SEND DATA ---
+  // --- SEND ---
   startSendTime = micros(); 
   esp_now_send(broadcastAddress, (uint8_t *) &myData, sizeof(myData));
 
-  delay(200); // 5 Updates per second
+  delay(200); 
 }
