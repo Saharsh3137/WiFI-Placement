@@ -14,6 +14,7 @@ import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
+import androidx.core.app.ComponentActivity;
 
 import com.github.mikephil.charting.charts.LineChart;
 import com.github.mikephil.charting.data.Entry;
@@ -23,7 +24,7 @@ import com.github.mikephil.charting.data.LineDataSet;
 import java.io.InputStream;
 import java.util.UUID;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends ComponentActivity {
 
     private TextView statusText, rssiText, latencyText, packetLossText, qualityText;
     private Button connectButton, disconnectButton;
