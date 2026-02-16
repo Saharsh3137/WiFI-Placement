@@ -34,17 +34,58 @@ int jitter = 0;
 unsigned long lastRecvTime = 0;      
 const unsigned long TIMEOUT_MS = 2000; 
 
-// --- CALLBACK ---
+// --- SMOOTHING VARIABLES ---
+int displayLatency = 0;       // The "Clean" number we show
+unsigned long lastGoodTime = 0; // When did we last get a real number?
+
+// --- FUNCTION DEFINITIONS ---
+
+// 1. Send To Phone (Moved ABOVE OnDataRecv to fix compiler error)
+void sendToPhone() {
+  if (SerialBT.hasClient()) {
+    SerialBT.print(incoming.id); SerialBT.print(",");
+    SerialBT.print(incoming.rssi); SerialBT.print(",");
+    SerialBT.print(incoming.snr); SerialBT.print(",");
+    SerialBT.print(incoming.voltage/1000.0); SerialBT.print(",");
+    
+    // CALCULATE AND SEND % INSTEAD OF TOTAL COUNT
+    float lossPct = 0.0;
+    if (incoming.packetId > 0) {
+        lossPct = (float)totalPacketsLost / incoming.packetId * 100.0;
+    }
+    SerialBT.print(lossPct, 2); 
+    
+    SerialBT.print(",");
+    SerialBT.print(jitter); SerialBT.print(",");
+    SerialBT.println(displayLatency); // Send the Smooth Latency
+  }
+}
+
+// 2. Data Receiver
 void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
   unsigned long now = millis();
   
-  // We found data! Reset the "Hunting" timer
+  // Connection is Alive
   isConnected = true; 
   lastRecvTime = now; 
   
   memcpy(&incoming, incomingData, sizeof(incoming));
 
-  // Jitter
+  // --- THE FILTER LOGIC ---
+  if (incoming.latency != 999) {
+      // It's a REAL number (e.g., 12ms). Use it immediately.
+      displayLatency = incoming.latency;
+      lastGoodTime = now;
+  } 
+  else {
+      // It's a GLITCH (999ms). Ignore it!
+      // UNLESS... it's been glitching for > 1 second. Then it's real.
+      if (now - lastGoodTime > 1000) {
+          displayLatency = 999;
+      }
+  }
+
+  // Jitter Calc
   if (lastArrivalTime != 0) {
     long diff = now - lastArrivalTime;
     int rawJitter = abs((long)diff - 200); 
@@ -52,7 +93,7 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
   }
   lastArrivalTime = now;
 
-  // Stats Logic
+  // Loss Calc
   if (incoming.packetId < lastPacketId || (now - lastRecvTime > 3000) || lastPacketId == 0) {
       lastPacketId = incoming.packetId;
       totalPacketsLost = 0; 
@@ -64,24 +105,11 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
       lastPacketId = incoming.packetId;
   }
   
-  // SEND TO PHONE (With Rate Limit)
-  // Only send every 50ms (20 times/sec) to prevent Bluetooth clogging WiFi
+  // Send to Phone (Rate Limited)
   static unsigned long lastBTSend = 0;
   if (now - lastBTSend > 50) {
      sendToPhone();
      lastBTSend = now;
-  }
-}
-
-void sendToPhone() {
-  if (SerialBT.hasClient()) {
-    SerialBT.print(incoming.id); SerialBT.print(",");
-    SerialBT.print(incoming.rssi); SerialBT.print(",");
-    SerialBT.print(incoming.snr); SerialBT.print(",");
-    SerialBT.print(incoming.voltage/1000.0); SerialBT.print(",");
-    SerialBT.print(totalPacketsLost); SerialBT.print(",");
-    SerialBT.print(jitter); SerialBT.print(",");
-    SerialBT.println(incoming.latency); 
   }
 }
 
@@ -112,7 +140,7 @@ void drawMainScreen() {
   display.drawLine(0, 8, 128, 8, WHITE);
   display.setCursor(0, 12); display.print("RSSI:"); display.print(incoming.rssi); display.print("dBm");  
   display.setCursor(74, 12); display.print("SNR:"); display.print(incoming.snr);
-  display.setCursor(0, 24); display.print("PING:"); display.print(incoming.latency); display.print("ms");
+  display.setCursor(0, 24); display.print("PING:"); display.print(displayLatency); display.print("ms");
   display.setCursor(74, 24); display.print("JIT:"); display.print(jitter); display.print("ms");
   
   float per = 0.0;
@@ -152,8 +180,7 @@ void setup() {
   
   WiFi.mode(WIFI_STA);
   
-  // THE COMPROMISE FIX:
-  // Not "NONE" (Crash), not "Default" (Lag). "MIN_MODEM" is the middle ground.
+  // Power Save Fix: MIN_MODEM allows BT + WiFi coexistence
   esp_wifi_set_ps(WIFI_PS_MIN_MODEM); 
   
   WiFi.disconnect(); 
