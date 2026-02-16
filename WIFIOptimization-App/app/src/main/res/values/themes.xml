@@ -1,0 +1,11 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Base application theme. -->
+    <style name="Theme.Wifi_Optimization" parent="Theme.Material3.Light.NoActionBar">
+        <item name="android:statusBarColor">#1A1F2B</item>
+        <item name="android:navigationBarColor">#1A1F2B</item>
+        <!-- Customize your light theme here. -->
+        <!-- <item name="colorPrimary">@color/my_light_primary</item> -->
+    </style>
+
+    <style name="Theme.WIFIOptimization" parent="Base.Theme.WIFIOptimization" />
+</resources>

@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#0B0F1A">
+
+    <LinearLayout
+        android:orientation="vertical"
+        android:padding="20dp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <!-- HEADER -->
+        <TextView
+            android:text="Wireless Network Monitor"
+            android:textSize="22sp"
+            android:textColor="#00E5FF"
+            android:textStyle="bold"
+            android:layout_marginBottom="12dp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"/>
+
+        <!-- STATUS -->
+        <TextView
+            android:id="@+id/statusText"
+            android:text="Status: Disconnected"
+            android:textSize="16sp"
+            android:textColor="#FF5252"
+            android:layout_marginBottom="8dp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"/>
+
+        <TextView
+            android:id="@+id/rssiText"
+            android:text="RSSI: -- dBm"
+            android:textColor="#FFFFFF"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"/>
+
+        <TextView
+            android:id="@+id/latencyText"
+            android:text="Latency: -- ms"
+            android:textColor="#FFFFFF"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"/>
+
+        <TextView
+            android:id="@+id/packetLossText"
+            android:text="Packet Loss: -- %"
+            android:textColor="#FFFFFF"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"/>
+
+        <TextView
+            android:id="@+id/qualityText"
+            android:text="Signal Quality: --"
+            android:textColor="#FFD740"
+            android:layout_marginBottom="16dp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"/>
+
+        <!-- BUTTONS -->
+        <LinearLayout
+            android:orientation="horizontal"
+            android:layout_marginBottom="20dp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content">
+
+            <Button
+                android:id="@+id/connectButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="10dp"
+                android:backgroundTint="#A4F642"
+                android:text="Connect"
+                android:textColor="#101010" />
+
+            <Button
+                android:id="@+id/disconnectButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:backgroundTint="#F63D3D"
+                android:text="Disconnect"
+                android:textColor="#070707"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <!-- RSSI -->
+        <TextView
+            android:id="@+id/rssiTitle"
+            android:text="RSSI (Live)"
+            android:textColor="#00E5FF"
+            android:textStyle="bold"
+            android:textSize="18sp"
+            android:layout_marginBottom="6dp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"/>
+
+        <com.github.mikephil.charting.charts.LineChart
+            android:id="@+id/rssiChart"
+            android:layout_width="match_parent"
+            android:layout_height="220dp"/>
+
+        <!-- LATENCY -->
+        <TextView
+            android:id="@+id/latencyTitle"
+            android:text="Latency (Live)"
+            android:textColor="#00E5FF"
+            android:textStyle="bold"
+            android:textSize="18sp"
+            android:layout_marginTop="24dp"
+            android:layout_marginBottom="6dp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"/>
+
+        <com.github.mikephil.charting.charts.LineChart
+            android:id="@+id/latencyChart"
+            android:layout_width="match_parent"
+            android:layout_height="220dp"/>
+
+        <!-- PACKET LOSS -->
+        <TextView
+            android:id="@+id/packetTitle"
+            android:text="Packet Loss (Live)"
+            android:textColor="#00E5FF"
+            android:textStyle="bold"
+            android:textSize="18sp"
+            android:layout_marginTop="24dp"
+            android:layout_marginBottom="6dp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"/>
+
+        <com.github.mikephil.charting.charts.LineChart
+            android:id="@+id/packetChart"
+            android:layout_width="match_parent"
+            android:layout_height="220dp"/>
+
+    </LinearLayout>
+</ScrollView>
