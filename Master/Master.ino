@@ -61,6 +61,10 @@ void sendToPhone() {
   }
 }
 
+float smoothedLatency = 0;
+const float filterWeight = 0.2; // Adjust between 0.1 (very smooth) and 0.5 (fast)
+
+
 // 2. Data Receiver
 void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
   unsigned long now = millis();
@@ -70,11 +74,11 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
   
   memcpy(&incoming, incomingData, sizeof(incoming));
 
-  // --- CHANGED: AGGRESSIVE FILTERING ---
-  // If the latency is valid, update it.
   if (incoming.latency != 999) {
-      displayLatency = incoming.latency;
-  } 
+    // Math: New Value = (Old * 0.8) + (Current * 0.2)
+    smoothedLatency = (smoothedLatency * (1.0 - filterWeight)) + (incoming.latency * filterWeight);
+    displayLatency = (int)smoothedLatency;
+}
   // If it IS 999 (glitch), we do NOTHING.
   // We just keep showing the last good number (e.g. 14ms).
   // This forces the graph to stay smooth.
@@ -101,7 +105,7 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
   
   // Send to Phone (Rate Limited)
   static unsigned long lastBTSend = 0;
-  if (now - lastBTSend > 50) {
+  if (now - lastBTSend > 100) {
      sendToPhone();
      lastBTSend = now;
   }
