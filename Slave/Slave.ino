@@ -107,7 +107,7 @@ void setup() {
         ESP.restart(); 
       }
     }
-    Serial.println("\nWiFi Connected!");
+    Serial.print("\nConnected to "); Serial.print(currentSSID); Serial.print("!");
     routerChannel = WiFi.channel(); 
     esp_now_register_send_cb(OnDataSent);
     

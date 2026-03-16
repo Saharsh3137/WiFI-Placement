@@ -39,10 +39,7 @@ int jitter = 0;
 unsigned long lastRecvTime = 0;      
 const unsigned long TIMEOUT_MS = 5000; 
 int displayLatency = 0;       
-float smoothedLatency = 0;
-const float filterWeight = 0.2; 
 
-// --- THE MISSING BLUETOOTH PIPELINE ---
 void sendToPhone() {
   if (SerialBT.hasClient()) {
     SerialBT.print(incoming.id); SerialBT.print(",");
@@ -56,8 +53,7 @@ void sendToPhone() {
 }
 
 void OnConfigSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
-  Serial.print("Burst Send Status: ");
-  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "DELIVERED" : "FAILED");
+  // Silent to keep Serial Monitor clean during normal operation
 }
 
 void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
@@ -66,15 +62,19 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
   lastRecvTime = now; 
   if(len == sizeof(incoming)) {
     memcpy(&incoming, incomingData, sizeof(incoming));
+    
+    // THE FIX: Raw, unfiltered ping latency 
     if (incoming.latency != 999) {
-      displayLatency = incoming.latency; 
+      displayLatency = incoming.latency;
     }
+    
     if (lastArrivalTime != 0) {
       long diff = now - lastArrivalTime;
-      int rawJitter = abs((long)diff - 200); 
+      int rawJitter = abs((long)diff - 1000); // Adjusted for the 1-second delay
       if (rawJitter < 500) jitter = rawJitter;
     }
     lastArrivalTime = now;
+    
     if (incoming.packetId < lastPacketId || (now - lastRecvTime > 3000) || lastPacketId == 0) {
         lastPacketId = incoming.packetId; totalPacketsLost = 0; 
     } else {
@@ -82,7 +82,6 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
         lastPacketId = incoming.packetId;
     }
     
-    // --- SEND DATA TO THE APP ---
     static unsigned long lastBTSend = 0;
     if (now - lastBTSend > 100) { 
        sendToPhone(); 
@@ -115,10 +114,8 @@ void drawMainScreen() {
 void setup() {
   Serial.begin(115200);
   delay(1000);
-  Serial.println("\n\n--- MASTER BOOTING ---");
 
   nvs_flash_init();
-  
   preferences.begin("wifi_creds", false);
   savedSSID = preferences.getString("ssid", "");
   savedPass = preferences.getString("pass", "");
@@ -131,7 +128,6 @@ void setup() {
   
   WiFi.mode(WIFI_STA); 
   WiFi.disconnect(); 
-  Serial.println("Radio set to Passive Radar Mode.");
 
   esp_now_init();
   esp_now_register_recv_cb(esp_now_recv_cb_t(OnDataRecv));
@@ -146,7 +142,7 @@ void setup() {
 void loop() {
   unsigned long now = millis();
 
-  // --- BLUETOOTH PROVISIONING ---
+  // --- BLUETOOTH OTA PROVISIONING ---
   if (SerialBT.available()) {
     String btData = SerialBT.readStringUntil('\n'); btData.trim(); 
     if (btData.startsWith("WIFI:")) {
@@ -165,33 +161,39 @@ void loop() {
         strcpy(configMsg.ssid, nSSID.c_str());
         strcpy(configMsg.password, nPass.c_str());
 
-        Serial.println("\nExecuting Dummy Router Hack...");
+        // --- OVER THE AIR UPDATE SWEEP ---
+        display.clearDisplay(); display.setCursor(0, 20); display.println("UPDATING SLAVE..."); display.display();
+        Serial.println("\nExecuting Over-The-Air Update Sweep...");
         WiFi.disconnect();
-        WiFi.mode(WIFI_AP_STA);
-        WiFi.softAP("PROV_LOBBY", NULL, 1, 1); 
-        delay(500);
+        delay(100);
 
-        esp_now_deinit(); 
-        esp_now_init(); 
-        esp_now_peer_info_t p = {};
-        memcpy(p.peer_addr, slaveMAC, 6);
-        p.channel = 1; 
-        esp_now_add_peer(&p);
+        // Hop through all channels to find and update the Slave
+        for (int ch = 1; ch <= 11; ch++) {
+          esp_wifi_set_promiscuous(true);
+          esp_wifi_set_channel(ch, WIFI_SECOND_CHAN_NONE);
+          esp_wifi_set_promiscuous(false);
 
-        Serial.println("Starting 50-packet burst fire...");
-        for (int i = 0; i < 50; i++) {
-          esp_now_send(slaveMAC, (uint8_t *) &configMsg, sizeof(configMsg));
-          delay(50);
+          esp_now_del_peer(slaveMAC);
+          esp_now_peer_info_t p = {};
+          memcpy(p.peer_addr, slaveMAC, 6);
+          p.channel = ch; 
+          esp_now_add_peer(&p);
+
+          Serial.printf("Blasting new config on CH %d...\n", ch);
+          for (int i = 0; i < 20; i++) {
+            esp_now_send(slaveMAC, (uint8_t *) &configMsg, sizeof(configMsg));
+            delay(15);
+          }
         }
         
-        Serial.println("Provisioning sequence complete. Restarting...");
-        delay(2000);
+        display.clearDisplay(); display.setCursor(0, 20); display.println("REBOOTING..."); display.display();
+        delay(1000);
         ESP.restart(); 
       }
     }
   }
 
-  // --- THE RADAR TRACKER LOGIC ---
+  // --- RADAR TRACKER LOGIC ---
   if (now - lastRecvTime > TIMEOUT_MS) {
     isConnected = false;
     if (hasWiFiCreds) {
