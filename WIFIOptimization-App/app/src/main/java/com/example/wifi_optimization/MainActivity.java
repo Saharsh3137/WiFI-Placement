@@ -1,28 +1,18 @@
 package com.example.wifi_optimization;
 
 import android.Manifest;
-import android.bluetooth.BluetoothAdapter;
-import android.bluetooth.BluetoothDevice;
-import android.bluetooth.BluetoothSocket;
+import android.bluetooth.*;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
-import android.os.Build;
-import android.os.Bundle;
+import android.os.*;
 import android.view.View;
-import android.widget.Button;
-import android.widget.EditText;
-import android.widget.LinearLayout;
-import android.widget.TextView;
-import android.widget.Toast;
+import android.widget.*;
 
-import androidx.appcompat.app.AppCompatActivity;
+import androidx.activity.ComponentActivity;
 import androidx.core.app.ActivityCompat;
-import androidx.core.app.ComponentActivity;
 
 import com.github.mikephil.charting.charts.LineChart;
-import com.github.mikephil.charting.data.Entry;
-import com.github.mikephil.charting.data.LineData;
-import com.github.mikephil.charting.data.LineDataSet;
+import com.github.mikephil.charting.data.*;
 
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -30,36 +20,38 @@ import java.util.UUID;
 
 public class MainActivity extends ComponentActivity {
 
-    private TextView statusText, rssiText, latencyText, packetLossText, qualityText;
-    private Button connectButton, disconnectButton;
+    TextView statusText, nodeStatusText, rssiText, latencyText, packetLossText, qualityText;
+    Button connectButton, disconnectButton, sendWifiBtn;
+    EditText ssidInput, passInput;
+    LinearLayout wifiLayout;
 
-    // UI elements for Provisioning
-    private EditText ssidInput, passInput;
-    private Button deployButton;
-    private LinearLayout provisioningLayout;
+    LineChart rssiChart, latencyChart, packetChart;
 
-    private LineChart rssiChart, latencyChart, packetChart;
-    private LineData rssiData, latencyData, packetData;
+    BluetoothAdapter bluetoothAdapter;
+    BluetoothSocket socket;
+    InputStream inputStream;
+    OutputStream outputStream;
 
-    private BluetoothAdapter bluetoothAdapter;
-    private BluetoothSocket socket;
-    private InputStream inputStream;
-    private OutputStream outputStream;
+    String DEVICE_ADDRESS = "B0:CB:D8:C6:66:7E";
+    UUID uuid = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
 
-    private final String DEVICE_ADDRESS = "B0:CB:D8:C6:66:7E";
-    private final UUID uuid =
-            UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
+    class NodeData {
+        float rssi, latency, loss;
+        long lastUpdate;
+    }
 
-    private int rssiIndex = 0;
-    private int latencyIndex = 0;
-    private int packetIndex = 0;
+    NodeData[] nodes = new NodeData[3];
+    int currentView = -1;
+
+    int i1 = 0, i2 = 0, i3 = 0;
 
     @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
+    protected void onCreate(Bundle b) {
+        super.onCreate(b);
         setContentView(R.layout.activity_main);
 
         statusText = findViewById(R.id.statusText);
+        nodeStatusText = findViewById(R.id.nodeStatusText);
         rssiText = findViewById(R.id.rssiText);
         latencyText = findViewById(R.id.latencyText);
         packetLossText = findViewById(R.id.packetLossText);
@@ -68,11 +60,10 @@ public class MainActivity extends ComponentActivity {
         connectButton = findViewById(R.id.connectButton);
         disconnectButton = findViewById(R.id.disconnectButton);
 
-        // Initialize Provisioning Elements
-        provisioningLayout = findViewById(R.id.provisioningLayout);
+        wifiLayout = findViewById(R.id.wifiLayout);
         ssidInput = findViewById(R.id.ssidInput);
         passInput = findViewById(R.id.passInput);
-        deployButton = findViewById(R.id.deployButton);
+        sendWifiBtn = findViewById(R.id.sendWifiBtn);
 
         rssiChart = findViewById(R.id.rssiChart);
         latencyChart = findViewById(R.id.latencyChart);
@@ -82,8 +73,11 @@ public class MainActivity extends ComponentActivity {
         setupChart(latencyChart);
         setupChart(packetChart);
 
+        for (int i = 0; i < 3; i++) nodes[i] = new NodeData();
+
         bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
 
+        // Permissions (Android 12+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             ActivityCompat.requestPermissions(this,
                     new String[]{
@@ -92,96 +86,71 @@ public class MainActivity extends ComponentActivity {
                     }, 1);
         }
 
-        connectButton.setOnClickListener(v -> {
-            statusText.setText("Connecting...");
-            statusText.setTextColor(Color.WHITE);
-            connectBluetooth();
-        });
+        connectButton.setOnClickListener(v -> connectBT());
+        disconnectButton.setOnClickListener(v -> disconnectBT());
+        sendWifiBtn.setOnClickListener(v -> sendWiFiCredentials());
 
-        disconnectButton.setOnClickListener(v -> disconnectBluetooth());
-
-        // Listener for sending the Wi-Fi credentials
-        deployButton.setOnClickListener(v -> sendWiFiCredentials());
+        findViewById(R.id.overallBtn).setOnClickListener(v -> currentView = -1);
+        findViewById(R.id.node1Btn).setOnClickListener(v -> currentView = 0);
+        findViewById(R.id.node2Btn).setOnClickListener(v -> currentView = 1);
+        findViewById(R.id.node3Btn).setOnClickListener(v -> currentView = 2);
     }
 
-    private void setupChart(LineChart chart) {
-        LineData data = new LineData();
-        chart.setData(data);
-        chart.setBackgroundColor(Color.parseColor("#121826"));
-        chart.getDescription().setEnabled(false);
-        chart.getLegend().setEnabled(false);
-        chart.setDrawGridBackground(false);
-        chart.setDrawBorders(false);
-        chart.getAxisRight().setEnabled(false);
-        chart.getXAxis().setDrawGridLines(false);
-        chart.getAxisLeft().setDrawGridLines(false);
-        chart.getXAxis().setTextColor(Color.GRAY);
-        chart.getAxisLeft().setTextColor(Color.GRAY);
-        chart.setTouchEnabled(true);
-        chart.setDragEnabled(true);
-        chart.setScaleEnabled(false);
-    }
+    // ---------------- BLUETOOTH ----------------
 
-    private void connectBluetooth() {
+    private void connectBT() {
+        statusText.setText("Connecting...");
+        statusText.setTextColor(Color.YELLOW);
+
         new Thread(() -> {
             try {
-                if (ActivityCompat.checkSelfPermission(this,
-                        Manifest.permission.BLUETOOTH_CONNECT)
-                        != PackageManager.PERMISSION_GRANTED) {
-                    runOnUiThread(() ->
-                            statusText.setText("Permission Denied"));
-                    return;
-                }
-
-                BluetoothDevice device =
-                        bluetoothAdapter.getRemoteDevice(DEVICE_ADDRESS);
+                BluetoothDevice device = bluetoothAdapter.getRemoteDevice(DEVICE_ADDRESS);
 
                 bluetoothAdapter.cancelDiscovery();
 
                 socket = device.createRfcommSocketToServiceRecord(uuid);
                 socket.connect();
 
-                // Open streams for sending and receiving data
                 inputStream = socket.getInputStream();
                 outputStream = socket.getOutputStream();
 
                 runOnUiThread(() -> {
-                    statusText.setText("Status: Connected");
+                    statusText.setText("Connected");
                     statusText.setTextColor(Color.GREEN);
+
                     connectButton.setVisibility(View.GONE);
                     disconnectButton.setVisibility(View.VISIBLE);
 
-                    // Show the Wi-Fi setup box
-                    provisioningLayout.setVisibility(View.VISIBLE);
+                    wifiLayout.setVisibility(View.VISIBLE);
                 });
 
                 readData();
 
             } catch (Exception e) {
+                e.printStackTrace();
+
                 runOnUiThread(() -> {
                     statusText.setText("Connection Failed");
                     statusText.setTextColor(Color.RED);
                 });
-                e.printStackTrace();
             }
         }).start();
     }
 
-    private void disconnectBluetooth() {
+    private void disconnectBT() {
         try {
             if (socket != null) socket.close();
-
-            statusText.setText("Status: Disconnected");
-            statusText.setTextColor(Color.RED);
-
-            connectButton.setVisibility(View.VISIBLE);
-            disconnectButton.setVisibility(View.GONE);
-
-            // Hide the Wi-Fi setup box
-            provisioningLayout.setVisibility(View.GONE);
-
         } catch (Exception ignored) {}
+
+        statusText.setText("Disconnected");
+        statusText.setTextColor(Color.RED);
+
+        connectButton.setVisibility(View.VISIBLE);
+        disconnectButton.setVisibility(View.GONE);
+        wifiLayout.setVisibility(View.GONE);
     }
+
+    // ---------------- YOUR ORIGINAL WORKING METHOD ----------------
 
     private void sendWiFiCredentials() {
         if (socket == null || !socket.isConnected() || outputStream == null) {
@@ -197,7 +166,6 @@ public class MainActivity extends ComponentActivity {
             return;
         }
 
-        // The ESP32 expects: WIFI:NetworkName,Password\n
         String payload = "WIFI:" + ssid + "," + pass + "\n";
 
         new Thread(() -> {
@@ -207,104 +175,129 @@ public class MainActivity extends ComponentActivity {
 
                 runOnUiThread(() -> {
                     Toast.makeText(MainActivity.this, "Credentials Sent!", Toast.LENGTH_LONG).show();
-                    // Optional: Clear password after sending
+
+                    // ✅ HIDE WIFI UI AFTER SUCCESS
+                    wifiLayout.setVisibility(View.GONE);
+
+                    // OPTIONAL: Clear fields
+                    ssidInput.setText("");
                     passInput.setText("");
+
+                    // OPTIONAL: Update status
+                    statusText.setText("Deploying to Nodes...");
+                    statusText.setTextColor(Color.parseColor("#00E5FF"));
                 });
+
             } catch (Exception e) {
-                runOnUiThread(() -> Toast.makeText(MainActivity.this, "Failed to send data", Toast.LENGTH_SHORT).show());
+                runOnUiThread(() ->
+                        Toast.makeText(MainActivity.this, "Failed to send data", Toast.LENGTH_SHORT).show());
                 e.printStackTrace();
             }
         }).start();
     }
 
+    // ---------------- DATA ----------------
+
     private void readData() {
         new Thread(() -> {
-            byte[] buffer = new byte[1024];
+            byte[] buf = new byte[1024];
 
             while (true) {
                 try {
-                    int bytes = inputStream.read(buffer);
-                    String data = new String(buffer, 0, bytes);
-                    processData(data);
+                    int n = inputStream.read(buf);
+                    process(new String(buf, 0, n));
                 } catch (Exception e) {
-                    runOnUiThread(() -> {
-                        statusText.setText("Disconnected");
-                        statusText.setTextColor(Color.RED);
-                        connectButton.setVisibility(View.VISIBLE);
-                        disconnectButton.setVisibility(View.GONE);
-                        provisioningLayout.setVisibility(View.GONE);
-                    });
                     break;
                 }
             }
         }).start();
     }
 
-    private void processData(String data) {
+    private void process(String d) {
         runOnUiThread(() -> {
             try {
-                String[] parts = data.trim().split(",");
-                if (parts.length < 7) return;
+                String[] p = d.trim().split(",");
+                if (p.length < 7) return;
 
-                float rssi = Float.parseFloat(parts[1]);
-                float packetLoss = Float.parseFloat(parts[4]);
-                float latency = Float.parseFloat(parts[6]);
+                int id = Integer.parseInt(p[0]) - 1;
 
-                rssiText.setText("RSSI: " + rssi + " dBm");
-                latencyText.setText("Latency: " + latency + " ms");
-                packetLossText.setText("Packet Loss: " + packetLoss + "%");
+                nodes[id].rssi = Float.parseFloat(p[1]);
+                nodes[id].loss = Float.parseFloat(p[4]);
+                nodes[id].latency = Float.parseFloat(p[6]);
+                nodes[id].lastUpdate = System.currentTimeMillis();
 
-                qualityText.setText("Signal Quality: " +
-                        getSignalQuality((int) rssi));
-
-                addEntry(rssiChart, rssi, rssiIndex++);
-                addEntry(latencyChart, latency, latencyIndex++);
-                addEntry(packetChart, packetLoss, packetIndex++);
+                updateUI();
 
             } catch (Exception ignored) {}
         });
     }
 
-    private void addEntry(LineChart chart, float value, int index) {
-        LineData data = chart.getData();
-        LineDataSet dataSet;
+    private void updateUI() {
+        NodeData d = (currentView == -1) ? avg() : nodes[currentView];
 
-        if (data.getDataSetCount() == 0) {
-            dataSet = new LineDataSet(null, "Live Data");
-            dataSet.setMode(LineDataSet.Mode.CUBIC_BEZIER);
-            dataSet.setColor(Color.parseColor("#00E5FF"));
-            dataSet.setLineWidth(2.5f);
-            dataSet.setDrawCircles(false);
-            dataSet.setDrawValues(false);
-            dataSet.setDrawFilled(true);
-            dataSet.setFillColor(Color.parseColor("#00E5FF"));
-            dataSet.setFillAlpha(40);
+        rssiText.setText("RSSI: " + d.rssi);
+        latencyText.setText("Latency: " + d.latency);
+        packetLossText.setText("Loss: " + d.loss);
 
-            data.addDataSet(dataSet);
-        } else {
-            dataSet = (LineDataSet) data.getDataSetByIndex(0);
+        updateStatus();
+
+        add(rssiChart, d.rssi, i1++);
+        add(latencyChart, d.latency, i2++);
+        add(packetChart, d.loss, i3++);
+    }
+
+    private NodeData avg() {
+        NodeData a = new NodeData();
+        int c = 0;
+
+        for (NodeData n : nodes) {
+            if (System.currentTimeMillis() - n.lastUpdate < 5000) {
+                a.rssi += n.rssi;
+                a.latency += n.latency;
+                a.loss += n.loss;
+                c++;
+            }
         }
 
-        data.addEntry(new Entry(index, value), 0);
-        data.notifyDataChanged();
+        if (c > 0) {
+            a.rssi /= c;
+            a.latency /= c;
+            a.loss /= c;
+        }
 
-        chart.notifyDataSetChanged();
-        chart.setVisibleXRangeMaximum(40);
-        chart.moveViewToX(data.getEntryCount());
+        return a;
     }
 
-    private String getSignalQuality(int rssi) {
-        if (rssi > -60) return "Excellent";
-        if (rssi > -75) return "Good";
-        if (rssi > -85) return "Weak";
-        return "Poor";
+    private void updateStatus() {
+        String s = "";
+        for (int i = 0; i < 3; i++) {
+            s += "N" + (i + 1) + ":" +
+                    (System.currentTimeMillis() - nodes[i].lastUpdate < 5000 ? "ON " : "OFF ");
+        }
+        nodeStatusText.setText(s);
     }
 
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        try {
-            if (socket != null) socket.close();
-        } catch (Exception ignored) {}
+    private void setupChart(LineChart c) {
+        c.setData(new LineData());
+        c.getDescription().setEnabled(false);
+        c.getAxisRight().setEnabled(false);
+    }
+
+    private void add(LineChart c, float v, int i) {
+        LineData d = c.getData();
+        LineDataSet s;
+
+        if (d.getDataSetCount() == 0) {
+            s = new LineDataSet(null, "data");
+            s.setMode(LineDataSet.Mode.CUBIC_BEZIER);
+            s.setColor(Color.CYAN);
+            s.setDrawCircles(false);
+            d.addDataSet(s);
+        } else s = (LineDataSet) d.getDataSetByIndex(0);
+
+        d.addEntry(new Entry(i, v), 0);
+        d.notifyDataChanged();
+        c.notifyDataSetChanged();
+        c.moveViewToX(d.getEntryCount());
     }
 }
