@@ -3,18 +3,20 @@ package com.example.wifi_optimization;
 import android.Manifest;
 import android.bluetooth.*;
 import android.content.pm.PackageManager;
-import android.graphics.Bitmap;
+import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffXfermode;
 import android.graphics.RadialGradient;
-import android.graphics.Rect;
 import android.graphics.Shader;
 import android.os.*;
-import android.content.Context;
+import android.view.GestureDetector;
+import android.view.MotionEvent;
+import android.view.ScaleGestureDetector;
 import android.view.View;
 import android.widget.*;
 import androidx.appcompat.app.AppCompatActivity;
@@ -22,13 +24,13 @@ import androidx.core.app.ActivityCompat;
 import com.github.mikephil.charting.charts.LineChart;
 import com.github.mikephil.charting.data.*;
 import java.io.BufferedReader;
-import java.io.InputStreamReader;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
-import java.util.UUID;
-import java.util.Random;
-import java.util.Locale;
 import java.util.ArrayList;
+import java.util.Locale;
+import java.util.Random;
+import java.util.UUID;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -74,7 +76,6 @@ public class MainActivity extends AppCompatActivity {
     Runnable demoRunnable;
     Random random = new Random();
 
-    // Demo Mode Physics
     float[] demoRssi = {-45f, -60f, -75f};
     float[] demoLatency = {12f, 25f, 45f};
 
@@ -113,7 +114,6 @@ public class MainActivity extends AppCompatActivity {
         latencyChart = findViewById(R.id.latencyChart);
         packetChart = findViewById(R.id.packetChart);
 
-        // Bind Dynamic Mesh UI
         startCalibBtn = findViewById(R.id.startCalibBtn);
         calibStatusText = findViewById(R.id.calibStatusText);
         distanceReadoutText = findViewById(R.id.distanceReadoutText);
@@ -136,7 +136,6 @@ public class MainActivity extends AppCompatActivity {
                     new String[]{Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN}, 1);
         }
 
-        // Listeners
         connectButton.setOnClickListener(v -> connectBT());
         disconnectButton.setOnClickListener(v -> disconnectBT());
         sendWifiBtn.setOnClickListener(v -> sendWiFiCredentials());
@@ -150,8 +149,6 @@ public class MainActivity extends AppCompatActivity {
         });
 
         resetStatsBtn.setOnClickListener(v -> resetSessionData());
-
-        // --- TRIGGER DYNAMIC MESH SEQUENCE ---
         startCalibBtn.setOnClickListener(v -> triggerMeshSweep());
 
         setupNavigation();
@@ -167,7 +164,6 @@ public class MainActivity extends AppCompatActivity {
         uiHandler.post(uiRefreshRunnable);
     }
 
-    // --- THE DYNAMIC MESH ORCHESTRATOR ---
     private void triggerMeshSweep() {
         boolean isConnected = (socket != null && socket.isConnected());
         if (!isConnected && !demoModeSwitch.isChecked()) {
@@ -178,7 +174,6 @@ public class MainActivity extends AppCompatActivity {
         startCalibBtn.setEnabled(false);
         startCalibBtn.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.GRAY));
 
-        // 18-Second Orchestrator to match the physics of the ESP hardware
         new CountDownTimer(18000, 1000) {
             public void onTick(long millisUntilFinished) {
                 int sec = (int) (millisUntilFinished / 1000);
@@ -189,7 +184,6 @@ public class MainActivity extends AppCompatActivity {
 
                 calibStatusText.setTextColor(Color.parseColor("#FFD740"));
 
-                // Fire the trigger exactly when the timer starts
                 if (sec == 17 && !demoModeSwitch.isChecked()) {
                     try {
                         outputStream.write("CALIBRATE\n".getBytes());
@@ -200,8 +194,7 @@ public class MainActivity extends AppCompatActivity {
 
             public void onFinish() {
                 if (demoModeSwitch.isChecked()) {
-                    // Simulate a perfect MESH response for the Demo
-                    process("MESH,-50.0,-55.0,-52.0,-48.5,-51.0,-60.0\n");
+                    process("MESH,-45.0,-55.0,-62.0,-40.5,-51.0,-65.0\n");
                 }
                 startCalibBtn.setEnabled(true);
                 startCalibBtn.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.parseColor("#00E5FF")));
@@ -216,7 +209,6 @@ public class MainActivity extends AppCompatActivity {
         latencyChart.clear(); initChartData(latencyChart);
         packetChart.clear(); initChartData(packetChart);
         qualityText.setText("--/100");
-        heatmapView.setMesh(0,0,0,0,0,0); // Clear Radar
         distanceReadoutText.setText("Awaiting mesh data...");
         Toast.makeText(this, "Session Data Cleared", Toast.LENGTH_SHORT).show();
         updateUI();
@@ -266,7 +258,7 @@ public class MainActivity extends AppCompatActivity {
                                     i + 1, (int)demoRssi[i], s, v, l, j, (int)demoLatency[i]);
                             process(fakeData);
                         }
-                        demoHandler.postDelayed(this, 200);
+                        demoHandler.postDelayed(this, 1000);
                     }
                 };
                 demoHandler.post(demoRunnable);
@@ -380,14 +372,10 @@ public class MainActivity extends AppCompatActivity {
         }, 4000);
     }
 
-    // =========================================================================
-    // THE 6-VARIABLE DATA ENGINE
-    // =========================================================================
     private void process(String d) {
         try {
             String clean = d.replaceAll("[\\n\\r]", "").trim();
 
-            // --- THE DYNAMIC MESH INTERCEPTOR ---
             if (clean.startsWith("MESH,")) {
                 String[] parts = clean.split(",");
                 if (parts.length >= 7) {
@@ -398,17 +386,15 @@ public class MainActivity extends AppCompatActivity {
                     float rssiR2 = Float.parseFloat(parts[5]);
                     float rssiR3 = Float.parseFloat(parts[6]);
 
-                    // 1. ESP-TO-ESP MATH (Weaker transmit power, ~ -35dBm baseline)
                     double d12 = rssi12 <= -90 ? 15.0 : Math.pow(10, (-35.0 - rssi12) / 25.0);
                     double d13 = rssi13 <= -90 ? 15.0 : Math.pow(10, (-35.0 - rssi13) / 25.0);
                     double d23 = rssi23 <= -90 ? 15.0 : Math.pow(10, (-35.0 - rssi23) / 25.0);
 
-                    // 2. NODE-TO-ROUTER MATH (Your calibrated -46.5 baseline)
                     double r1 = rssiR1 <= -90 ? 20.0 : Math.pow(10, (-46.5 - rssiR1) / 31.9);
                     double r2 = rssiR2 <= -90 ? 20.0 : Math.pow(10, (-46.5 - rssiR2) / 31.9);
                     double r3 = rssiR3 <= -90 ? 20.0 : Math.pow(10, (-46.5 - rssiR3) / 31.9);
 
-                    heatmapView.setMesh((float)d12, (float)d13, (float)d23, (float)r1, (float)r2, (float)r3);
+                    heatmapView.updateMeshGeometry((float)d12, (float)d13, (float)d23, (float)r1, (float)r2, (float)r3);
 
                     runOnUiThread(() -> {
                         calibStatusText.setText("Mesh Complete! Spatial Matrix built.");
@@ -428,7 +414,6 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
 
-            // Normal Dashboard Processing
             String[] p = clean.split(",");
             if (p.length < 7) return;
 
@@ -484,8 +469,8 @@ public class MainActivity extends AppCompatActivity {
 
         updateGraphs(avg);
 
-        // Push the live telemetry into the Heatmap graphics engine
-        heatmapView.updateLiveSignals(nodes[0].rssi, nodes[1].rssi, nodes[2].rssi, nodes[0].latency, nodes[1].latency, nodes[2].latency,nodes[0].loss, nodes[1].loss, nodes[2].loss);
+        // Push live signals to engine
+        heatmapView.updateLiveSignals(nodes[0].rssi, nodes[1].rssi, nodes[2].rssi);
     }
 
     private void updateGraphs(NodeData avg) {
@@ -568,269 +553,207 @@ public class MainActivity extends AppCompatActivity {
     }
 
     // =========================================================================
-    // THE DYNAMIC MESH ENGINE (LAW OF COSINES & HEATMAP)
+    // GPU ACCELERATED MESH ENGINE (SCREEN BLENDING & INTERACTIVITY)
     // =========================================================================
     class HeatmapView extends View {
-        Paint paintN1, paintN2, paintN3, nodeDotPaint, textPaint, linePaint;
-        float d12=0, d13=0, d23=0, r1=0, r2=0, r3=0;
+        Paint nodeDotPaint, textPaint, linePaint, heatPaint;
+        float d12 = 1f, d13 = 1f, d23 = 1f, r1 = 0f, r2 = 0f, r3 = 0f;
 
-        // Store live signal strength
+        // Failsafe state (Triangle Inequality)
+        float lastGood_d12 = 1f, lastGood_d13 = 1f, lastGood_d23 = 1f;
+
+        // Live Data
         float liveRssi1 = -99f, liveRssi2 = -99f, liveRssi3 = -99f;
-        float latency1, latency2, latency3;
-        float loss1, loss2, loss3;
+
+        // Touch Interaction Matrix
+        Matrix transformMatrix = new Matrix();
+        ScaleGestureDetector scaleDetector;
+        GestureDetector gestureDetector;
+        boolean isInitialCenterDone = false;
 
         public HeatmapView(Context context) {
             super(context);
-
-            paintN1 = new Paint(); paintN1.setColor(Color.RED); paintN1.setAlpha(50); paintN1.setStyle(Paint.Style.FILL);
-            paintN2 = new Paint(); paintN2.setColor(Color.GREEN); paintN2.setAlpha(50); paintN2.setStyle(Paint.Style.FILL);
-            paintN3 = new Paint(); paintN3.setColor(Color.YELLOW); paintN3.setAlpha(50); paintN3.setStyle(Paint.Style.FILL);
-
             nodeDotPaint = new Paint(); nodeDotPaint.setColor(Color.WHITE); nodeDotPaint.setStyle(Paint.Style.FILL);
-            textPaint = new Paint(); textPaint.setColor(Color.WHITE); textPaint.setTextSize(35f); textPaint.setFakeBoldText(true);
+            textPaint = new Paint(); textPaint.setColor(Color.WHITE); textPaint.setTextSize(40f); textPaint.setFakeBoldText(true);
+            linePaint = new Paint(); linePaint.setColor(Color.parseColor("#888888")); linePaint.setStrokeWidth(5f); linePaint.setStyle(Paint.Style.STROKE);
 
-            linePaint = new Paint(); linePaint.setColor(Color.parseColor("#555555")); linePaint.setStrokeWidth(5f); linePaint.setStyle(Paint.Style.STROKE);
+            // This is the magic. It mathematically compounds intersecting signal colors.
+            heatPaint = new Paint();
+            heatPaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.SCREEN));
+
+            setupTouchListeners(context);
         }
 
-        // Method to catch live data from Dashboard
-        public void updateLiveSignals(float rssi1, float rssi2, float rssi3, float latency1, float latency2, float latency3, float loss1, float loss2, float loss3) {
-            this.liveRssi1 = rssi1;
-            this.liveRssi2 = rssi2;
-            this.liveRssi3 = rssi3;
-            this.latency1 = latency1;
-            this.latency2 = latency2;
-            this.latency3 = latency3;
-            this.loss1 = loss1;
-            this.loss2 = loss2;
-            this.loss3 = loss3;
-            postInvalidate(); // Force a redraw when new data arrives
+        private void setupTouchListeners(Context context) {
+            scaleDetector = new ScaleGestureDetector(context, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                @Override
+                public boolean onScale(ScaleGestureDetector detector) {
+                    float scaleFactor = detector.getScaleFactor();
+                    transformMatrix.postScale(scaleFactor, scaleFactor, detector.getFocusX(), detector.getFocusY());
+                    invalidate();
+                    return true;
+                }
+            });
+
+            gestureDetector = new GestureDetector(context, new GestureDetector.SimpleOnGestureListener() {
+                @Override
+                public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX, float distanceY) {
+                    transformMatrix.postTranslate(-distanceX, -distanceY);
+                    invalidate();
+                    return true;
+                }
+            });
         }
 
-        public void setMesh(float d12, float d13, float d23, float r1, float r2, float r3) {
-            // Failsafe zero protection
-            this.d12 = Math.max(0.1f, d12);
-            this.d13 = Math.max(0.1f, d13);
-            this.d23 = Math.max(0.1f, d23);
+        @Override
+        public boolean onTouchEvent(MotionEvent event) {
+            scaleDetector.onTouchEvent(event);
+            gestureDetector.onTouchEvent(event);
+            return true;
+        }
+
+        public void updateLiveSignals(float rssi1, float rssi2, float rssi3) {
+            this.liveRssi1 = rssi1; this.liveRssi2 = rssi2; this.liveRssi3 = rssi3;
+            invalidate();
+        }
+
+        public void updateMeshGeometry(float d12, float d13, float d23, float r1, float r2, float r3) {
+            d12 = Math.max(0.1f, d12); d13 = Math.max(0.1f, d13); d23 = Math.max(0.1f, d23);
+
+            // THE PHYSICS ENFORCER
+            if ((d12 + d13 > d23) && (d12 + d23 > d13) && (d13 + d23 > d12)) {
+                lastGood_d12 = d12; lastGood_d13 = d13; lastGood_d23 = d23;
+                this.d12 = d12; this.d13 = d13; this.d23 = d23;
+            } else {
+                this.d12 = lastGood_d12; this.d13 = lastGood_d13; this.d23 = lastGood_d23;
+            }
             this.r1 = r1; this.r2 = r2; this.r3 = r3;
-            postInvalidate();
+            invalidate();
         }
+
         @Override
         protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
+            int width = getWidth(); int height = getHeight();
+            if (width == 0 || height == 0 || (r1 == 0 && r2 == 0 && r3 == 0)) return;
 
-            if (r1 == 0 && r2 == 0 && r3 == 0) return;
+            // Base Background: Fills the entire screen with "Weak/Dead Zone" Dark Red
+            canvas.drawColor(Color.parseColor("#0B0F1A")); // Deep black/blue void base
 
-            int width = getWidth();
-            int height = getHeight();
-
-            // ==============================
-            // 1. NODE POSITION
-            // ==============================
-            float logical_x1 = 0, logical_y1 = 0;
-            float logical_x2 = d12, logical_y2 = 0;
-
+            // 1. CALCULATE LOGICAL GEOMETRY
+            float PPM = 150f; // Pixels per meter layout scale
+            float n1x = 0; float n1y = 0;
+            float n2x = d12 * PPM; float n2y = 0;
             float logical_x3 = (d12 * d12 + d13 * d13 - d23 * d23) / (2 * d12);
             float inner = d13 * d13 - logical_x3 * logical_x3;
             float logical_y3 = inner > 0 ? (float) Math.sqrt(inner) : 0f;
+            float n3x = logical_x3 * PPM; float n3y = logical_y3 * PPM;
 
-            float max_x = Math.max(Math.max(logical_x1, logical_x2), logical_x3);
-            float min_x = Math.min(Math.min(logical_x1, logical_x2), logical_x3);
-            float max_y = Math.max(Math.max(logical_y1, logical_y2), logical_y3);
-            float min_y = Math.min(Math.min(logical_y1, logical_y2), logical_y3);
+            float[] rPos = estimateRouterPosition(n1x, n1y, n2x, n2y, n3x, n3y);
+            float rx = rPos[0]; float ry = rPos[1];
 
-            float logical_width = max_x - min_x;
-            float logical_height = max_y - min_y;
-
-            float max_radius = Math.max(Math.max(r1, r2), r3);
-
-            float total_width = logical_width + (max_radius * 2);
-            float total_height = logical_height + (max_radius * 2);
-
-            float ppm = Math.min(width / total_width, height / total_height);
-
-            float offsetX = (width - logical_width * ppm) / 2f - min_x * ppm;
-            float offsetY = (height - logical_height * ppm) / 2f - min_y * ppm;
-
-            float n1x = logical_x1 * ppm + offsetX;
-            float n1y = logical_y1 * ppm + offsetY;
-
-            float n2x = logical_x2 * ppm + offsetX;
-            float n2y = logical_y2 * ppm + offsetY;
-
-            float n3x = logical_x3 * ppm + offsetX;
-            float n3y = logical_y3 * ppm + offsetY;
-            float[] router = estimateRouterPosition(n1x, n1y, n2x, n2y, n3x, n3y);
-            float rx = router[0];
-            float ry = router[1];
-
-            // ==============================
-            // 2. SMOOTH HEATMAP
-            // ==============================
-            int scale = 2; // smaller = smoother
-
-            int bmpW = width / scale;
-            int bmpH = height / scale;
-
-            Bitmap bmp = Bitmap.createBitmap(bmpW, bmpH, Bitmap.Config.ARGB_8888);
-
-            float maxSignal = -100;
-            float maxX = 0, maxY = 0;
-
-            for (int x = 0; x < bmpW; x++) {
-                for (int y = 0; y < bmpH; y++) {
-
-                    float realX = x * scale;
-                    float realY = y * scale;
-
-                    float finalRssi = computeSignal(realX, realY, rx, ry);
-
-                    if (finalRssi > maxSignal) {
-                        maxSignal = finalRssi;
-                        maxX = realX;
-                        maxY = realY;
-                    }
-
-                    bmp.setPixel(x, y, getHeatColor(finalRssi));
-                }
+            // Auto-center on first load
+            if (!isInitialCenterDone) {
+                float centerX = (n1x + n2x + n3x + rx) / 4f;
+                float centerY = (n1y + n2y + n3y + ry) / 4f;
+                transformMatrix.postTranslate((width / 2f) - centerX, (height / 2f) - centerY);
+                isInitialCenterDone = true;
             }
 
-            Paint paint = new Paint();
-            paint.setFilterBitmap(true);
+            canvas.save();
+            canvas.concat(transformMatrix); // Apply Pan & Zoom
 
-            canvas.drawBitmap(bmp, null, new Rect(0, 0, width, height), paint);
+            // 2. DRAW MASSIVE GPU GRADIENTS
+            // The radius is massive so they overlap heavily and eliminate any isolated black spaces.
+            float gradRadius = Math.max(width, height) * 1.5f;
 
-            Paint routerPaint = new Paint();
-            routerPaint.setColor(Color.WHITE);
-            routerPaint.setStyle(Paint.Style.FILL);
+            // Router Origin (-30 dBm Dark Green)
+            int cR = getColorForRssi(-30f, 200);
+            heatPaint.setShader(new RadialGradient(rx, ry, gradRadius, cR, Color.TRANSPARENT, Shader.TileMode.CLAMP));
+            canvas.drawCircle(rx, ry, gradRadius, heatPaint);
 
-            canvas.drawCircle(rx, ry, 15f, routerPaint);
+            // Node 1 Gradient
+            int c1 = getColorForRssi(liveRssi1, 180);
+            heatPaint.setShader(new RadialGradient(n1x, n1y, gradRadius, c1, Color.TRANSPARENT, Shader.TileMode.CLAMP));
+            canvas.drawCircle(n1x, n1y, gradRadius, heatPaint);
 
-            Paint routerRing = new Paint();
-            routerRing.setColor(Color.GREEN);
-            routerRing.setStyle(Paint.Style.STROKE);
-            routerRing.setStrokeWidth(4f);
+            // Node 2 Gradient
+            int c2 = getColorForRssi(liveRssi2, 180);
+            heatPaint.setShader(new RadialGradient(n2x, n2y, gradRadius, c2, Color.TRANSPARENT, Shader.TileMode.CLAMP));
+            canvas.drawCircle(n2x, n2y, gradRadius, heatPaint);
 
-            canvas.drawCircle(rx, ry, 25f, routerRing);
+            // Node 3 Gradient
+            int c3 = getColorForRssi(liveRssi3, 180);
+            heatPaint.setShader(new RadialGradient(n3x, n3y, gradRadius, c3, Color.TRANSPARENT, Shader.TileMode.CLAMP));
+            canvas.drawCircle(n3x, n3y, gradRadius, heatPaint);
 
-            canvas.drawText("R", rx - 10, ry - 30, textPaint);
-
-            // ==============================
-            // 3. STRONGEST POINT
-            // ==============================
-            Paint glow = new Paint();
-            glow.setShader(new RadialGradient(
-                    maxX, maxY,
-                    40f,
-                    Color.parseColor("#00FF88"),
-                    Color.TRANSPARENT,
-                    Shader.TileMode.CLAMP
-            ));
-            canvas.drawCircle(maxX, maxY, 40f, glow);
-
-            // ==============================
-            // 4. MESH + NODES
-            // ==============================
+            // 3. DRAW MESH GEOMETRY
             Path path = new Path();
-            path.moveTo(n1x, n1y);
-            path.lineTo(n2x, n2y);
-            path.lineTo(n3x, n3y);
-            path.close();
-
+            path.moveTo(n1x, n1y); path.lineTo(n2x, n2y); path.lineTo(n3x, n3y); path.close();
             canvas.drawPath(path, linePaint);
 
-            canvas.drawCircle(n1x, n1y, 20f, nodeDotPaint);
-            canvas.drawCircle(n2x, n2y, 20f, nodeDotPaint);
-            canvas.drawCircle(n3x, n3y, 20f, nodeDotPaint);
+            // Hardware Nodes
+            canvas.drawCircle(n1x, n1y, 25f, nodeDotPaint);
+            canvas.drawCircle(n2x, n2y, 25f, nodeDotPaint);
+            canvas.drawCircle(n3x, n3y, 25f, nodeDotPaint);
+            canvas.drawText("N1", n1x - 30, n1y - 40, textPaint);
+            canvas.drawText("N2", n2x - 30, n2y - 40, textPaint);
+            canvas.drawText("N3", n3x - 30, n3y - 40, textPaint);
 
-            canvas.drawText("N1", n1x - 25, n1y - 30, textPaint);
-            canvas.drawText("N2", n2x - 25, n2y - 30, textPaint);
-            canvas.drawText("N3", n3x - 25, n3y - 30, textPaint);
+            // Router Anchor
+            Paint routerDot = new Paint(); routerDot.setColor(Color.WHITE); routerDot.setStyle(Paint.Style.FILL);
+            canvas.drawCircle(rx, ry, 20f, routerDot);
+            Paint routerRing = new Paint(); routerRing.setColor(Color.GREEN); routerRing.setStyle(Paint.Style.STROKE); routerRing.setStrokeWidth(6f);
+            canvas.drawCircle(rx, ry, 35f, routerRing);
+            canvas.drawText("ROUTER", rx - 60, ry - 50, textPaint);
+
+            canvas.restore();
         }
-        private float distance(float x1, float y1, float x2, float y2) {
-            return (float) Math.sqrt((x1 - x2)*(x1 - x2) + (y1 - y2)*(y1 - y2));
-        }
+
+        // --- MATH UTILS ---
         private float rssiToDistance(float rssi) {
-            float A = -40f; // RSSI at 1 meter (tune)
-            float n = 2.5f; // path loss exponent (2–4)
-
+            float A = -40f;
+            float n = 2.5f;
             return (float) Math.pow(10, (A - rssi) / (10 * n));
         }
-        private float[] estimateRouterPosition(
-                float n1x, float n1y,
-                float n2x, float n2y,
-                float n3x, float n3y) {
 
-            float r1 = rssiToDistance(liveRssi1);
-            float r2 = rssiToDistance(liveRssi2);
-            float r3 = rssiToDistance(liveRssi3);
-
-            // Trilateration equations
-            float A = 2*(n2x - n1x);
-            float B = 2*(n2y - n1y);
+        private float[] estimateRouterPosition(float n1x, float n1y, float n2x, float n2y, float n3x, float n3y) {
+            float r1 = rssiToDistance(liveRssi1); float r2 = rssiToDistance(liveRssi2); float r3 = rssiToDistance(liveRssi3);
+            float A = 2*(n2x - n1x); float B = 2*(n2y - n1y);
             float C = r1*r1 - r2*r2 - n1x*n1x + n2x*n2x - n1y*n1y + n2y*n2y;
-
-            float D = 2*(n3x - n1x);
-            float E = 2*(n3y - n1y);
+            float D = 2*(n3x - n1x); float E = 2*(n3y - n1y);
             float F = r1*r1 - r3*r3 - n1x*n1x + n3x*n3x - n1y*n1y + n3y*n3y;
-
             float denom = (A*E - B*D);
-
-            if (Math.abs(denom) < 1e-6) {
-                return new float[]{(n1x+n2x+n3x)/3f, (n1y+n2y+n3y)/3f};
-            }
-
-            float x = (C*E - B*F) / denom;
-            float y = (A*F - C*D) / denom;
-
+            if (Math.abs(denom) < 1e-6) return new float[]{(n1x+n2x+n3x)/3f, (n1y+n2y+n3y)/3f};
+            float x = (C*E - B*F) / denom; float y = (A*F - C*D) / denom;
             return new float[]{x, y};
         }
-        private float computeSignal(float x, float y, float rx, float ry) {
 
-            float d = distance(x, y, rx, ry);
-
-            float PATH_LOSS = 20f;        // less aggressive decay
-            float REFERENCE_RSSI = -30f;  // stronger starting point
-
-            float signal = REFERENCE_RSSI - (PATH_LOSS * (float)Math.log10(d + 1));
-
-            return signal;
-        }
-        private int getHeatColor(float rssi) {
-
-            // Define visible range
-            float min = -90f;
-            float max = -30f;
-
+        // True Wi-Fi Signal Colors (Dark Green = Strong, Dark Red = Weak)
+        private int getColorForRssi(float rssi, int alpha) {
+            float min = -95f; float max = -30f;
             float t = (rssi - min) / (max - min);
             t = Math.max(0f, Math.min(1f, t));
 
-            return interpolateColor(t);
-        }
-        private int interpolateColor(float t) {
             int[] colors = {
-                    Color.parseColor("#0B0F1A"), // no signal
-                    Color.parseColor("#3E2723"), // dark brown/red
-                    Color.parseColor("#FF6D00"), // orange
-                    Color.parseColor("#FFD600"), // yellow
-                    Color.parseColor("#4CAF50"), // green
-                    Color.parseColor("#00E676")  // bright green (strongest)
+                    Color.parseColor("#8B0000"), // Dark Red (-95 dBm)
+                    Color.parseColor("#FF0000"), // Red
+                    Color.parseColor("#FF8C00"), // Orange
+                    Color.parseColor("#FFFF00"), // Yellow
+                    Color.parseColor("#00E676"), // Bright Green (-45 dBm)
+                    Color.parseColor("#004D00")  // Dark Green (-30 dBm)
             };
 
             float scaled = t * (colors.length - 1);
             int index = (int) scaled;
             float fraction = scaled - index;
-
             if (index >= colors.length - 1) return colors[colors.length - 1];
 
-            return blendColors(colors[index], colors[index + 1], fraction);
-        }
-        private int blendColors(int c1, int c2, float ratio) {
-
-            int r = (int)(Color.red(c1) + ratio * (Color.red(c2) - Color.red(c1)));
-            int g = (int)(Color.green(c1) + ratio * (Color.green(c2) - Color.green(c1)));
-            int b = (int)(Color.blue(c1) + ratio * (Color.blue(c2) - Color.blue(c1)));
-
-            return Color.argb(200, r, g, b);
+            int c1 = colors[index]; int c2 = colors[index + 1];
+            int r = (int)(Color.red(c1) + fraction * (Color.red(c2) - Color.red(c1)));
+            int g = (int)(Color.green(c1) + fraction * (Color.green(c2) - Color.green(c1)));
+            int b = (int)(Color.blue(c1) + fraction * (Color.blue(c2) - Color.blue(c1)));
+            return Color.argb(alpha, r, g, b);
         }
     }
 }
