@@ -3,8 +3,10 @@ package com.example.wifi_optimization;
 import android.Manifest;
 import android.bluetooth.*;
 import android.content.Context;
+import android.graphics.BlurMaskFilter;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.LinearGradient;
 import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Path;
@@ -157,7 +159,7 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void run() {
                 updateUI();
-                uiHandler.postDelayed(this, 200);
+                uiHandler.postDelayed(this, 400);
             }
         };
         uiHandler.post(uiRefreshRunnable);
@@ -555,53 +557,92 @@ public class MainActivity extends AppCompatActivity {
     // GPU ACCELERATED MESH ENGINE (SCREEN BLENDING & INTERACTIVITY)
     // =========================================================================
     class HeatmapView extends View {
-        Paint nodeDotPaint, textPaint, linePaint, heatPaint;
-        float d12 = 1f, d13 = 1f, d23 = 1f, r1 = 0f, r2 = 0f, r3 = 0f;
 
-        // Failsafe state (Triangle Inequality)
-        float lastGood_d12 = 1f, lastGood_d13 = 1f, lastGood_d23 = 1f;
+        private Paint nodeDotPaint, textPaint, linePaint;
+        private Paint routerDotPaint, routerRingPaint;
+        private Paint heatCellPaint, legendTextPaint, legendBarPaint, gridPaint;
 
-        // Live Data
-        float liveRssi1 = -99f, liveRssi2 = -99f, liveRssi3 = -99f;
+        private float d12 = 1f, d13 = 1f, d23 = 1f, r1 = 0f, r2 = 0f, r3 = 0f;
+        private float lastGood_d12 = 1f, lastGood_d13 = 1f, lastGood_d23 = 1f;
 
-        // Touch Interaction Matrix
-        Matrix transformMatrix = new Matrix();
-        ScaleGestureDetector scaleDetector;
-        GestureDetector gestureDetector;
-        boolean isInitialCenterDone = false;
+        private float liveRssi1 = -99f, liveRssi2 = -99f, liveRssi3 = -99f;
+
+        private Matrix transformMatrix = new Matrix();
+        private ScaleGestureDetector scaleDetector;
+        private GestureDetector gestureDetector;
+        private boolean isInitialCenterDone = false;
+
+        // Router smoothing
+        private float smoothRx = 0f, smoothRy = 0f;
+        private boolean routerInitialized = false;
 
         public HeatmapView(Context context) {
             super(context);
-            nodeDotPaint = new Paint(); nodeDotPaint.setColor(Color.WHITE); nodeDotPaint.setStyle(Paint.Style.FILL);
-            textPaint = new Paint(); textPaint.setColor(Color.WHITE); textPaint.setTextSize(40f); textPaint.setFakeBoldText(true);
-            linePaint = new Paint(); linePaint.setColor(Color.parseColor("#888888")); linePaint.setStrokeWidth(5f); linePaint.setStyle(Paint.Style.STROKE);
 
-            // This is the magic. It mathematically compounds intersecting signal colors.
-            heatPaint = new Paint();
-            heatPaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.SCREEN));
+            nodeDotPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            nodeDotPaint.setColor(Color.WHITE);
+            nodeDotPaint.setStyle(Paint.Style.FILL);
+
+            textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            textPaint.setColor(Color.WHITE);
+            textPaint.setTextSize(28f);
+            textPaint.setFakeBoldText(true);
+
+            linePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            linePaint.setColor(Color.argb(160, 180, 180, 180));
+            linePaint.setStrokeWidth(3f);
+            linePaint.setStyle(Paint.Style.STROKE);
+
+            routerDotPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            routerDotPaint.setColor(Color.WHITE);
+            routerDotPaint.setStyle(Paint.Style.FILL);
+
+            routerRingPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            routerRingPaint.setColor(Color.parseColor("#00FF66"));
+            routerRingPaint.setStyle(Paint.Style.STROKE);
+            routerRingPaint.setStrokeWidth(4f);
+
+            heatCellPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            heatCellPaint.setMaskFilter(new BlurMaskFilter(25, BlurMaskFilter.Blur.NORMAL));
+
+            legendTextPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            legendTextPaint.setColor(Color.WHITE);
+            legendTextPaint.setTextSize(24f);
+            legendTextPaint.setFakeBoldText(true);
+
+            legendBarPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            legendBarPaint.setStyle(Paint.Style.FILL);
+
+            gridPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            gridPaint.setColor(Color.argb(35, 255, 255, 255));
+            gridPaint.setStrokeWidth(1f);
 
             setupTouchListeners(context);
         }
 
         private void setupTouchListeners(Context context) {
-            scaleDetector = new ScaleGestureDetector(context, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
-                @Override
-                public boolean onScale(ScaleGestureDetector detector) {
-                    float scaleFactor = detector.getScaleFactor();
-                    transformMatrix.postScale(scaleFactor, scaleFactor, detector.getFocusX(), detector.getFocusY());
-                    invalidate();
-                    return true;
-                }
-            });
+            scaleDetector = new ScaleGestureDetector(context,
+                    new ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                        @Override
+                        public boolean onScale(ScaleGestureDetector detector) {
+                            float scaleFactor = detector.getScaleFactor();
+                            transformMatrix.postScale(scaleFactor, scaleFactor,
+                                    detector.getFocusX(), detector.getFocusY());
+                            postInvalidateOnAnimation();
+                            return true;
+                        }
+                    });
 
-            gestureDetector = new GestureDetector(context, new GestureDetector.SimpleOnGestureListener() {
-                @Override
-                public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX, float distanceY) {
-                    transformMatrix.postTranslate(-distanceX, -distanceY);
-                    invalidate();
-                    return true;
-                }
-            });
+            gestureDetector = new GestureDetector(context,
+                    new GestureDetector.SimpleOnGestureListener() {
+                        @Override
+                        public boolean onScroll(MotionEvent e1, MotionEvent e2,
+                                                float distanceX, float distanceY) {
+                            transformMatrix.postTranslate(-distanceX, -distanceY);
+                            postInvalidateOnAnimation();
+                            return true;
+                        }
+                    });
         }
 
         @Override
@@ -612,46 +653,92 @@ public class MainActivity extends AppCompatActivity {
         }
 
         public void updateLiveSignals(float rssi1, float rssi2, float rssi3) {
-            this.liveRssi1 = rssi1; this.liveRssi2 = rssi2; this.liveRssi3 = rssi3;
-            invalidate();
+            this.liveRssi1 = rssi1;
+            this.liveRssi2 = rssi2;
+            this.liveRssi3 = rssi3;
+            postInvalidateOnAnimation();
         }
 
         public void updateMeshGeometry(float d12, float d13, float d23, float r1, float r2, float r3) {
-            d12 = Math.max(0.1f, d12); d13 = Math.max(0.1f, d13); d23 = Math.max(0.1f, d23);
+            d12 = Math.max(0.1f, d12);
+            d13 = Math.max(0.1f, d13);
+            d23 = Math.max(0.1f, d23);
 
-            // THE PHYSICS ENFORCER
             if ((d12 + d13 > d23) && (d12 + d23 > d13) && (d13 + d23 > d12)) {
-                lastGood_d12 = d12; lastGood_d13 = d13; lastGood_d23 = d23;
-                this.d12 = d12; this.d13 = d13; this.d23 = d23;
+                lastGood_d12 = d12;
+                lastGood_d13 = d13;
+                lastGood_d23 = d23;
+                this.d12 = d12;
+                this.d13 = d13;
+                this.d23 = d23;
             } else {
-                this.d12 = lastGood_d12; this.d13 = lastGood_d13; this.d23 = lastGood_d23;
+                this.d12 = lastGood_d12;
+                this.d13 = lastGood_d13;
+                this.d23 = lastGood_d23;
             }
-            this.r1 = r1; this.r2 = r2; this.r3 = r3;
-            invalidate();
+
+            this.r1 = r1;
+            this.r2 = r2;
+            this.r3 = r3;
+
+            postInvalidateOnAnimation();
         }
 
         @Override
         protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
-            int width = getWidth(); int height = getHeight();
-            if (width == 0 || height == 0 || (r1 == 0 && r2 == 0 && r3 == 0)) return;
 
-            // Base Background: Fills the entire screen with "Weak/Dead Zone" Dark Red
-            canvas.drawColor(Color.parseColor("#0B0F1A")); // Deep black/blue void base
+            int width = getWidth();
+            int height = getHeight();
+            if (width == 0 || height == 0) return;
 
-            // 1. CALCULATE LOGICAL GEOMETRY
-            float PPM = 150f; // Pixels per meter layout scale
-            float n1x = 0; float n1y = 0;
-            float n2x = d12 * PPM; float n2y = 0;
-            float logical_x3 = (d12 * d12 + d13 * d13 - d23 * d23) / (2 * d12);
-            float inner = d13 * d13 - logical_x3 * logical_x3;
-            float logical_y3 = inner > 0 ? (float) Math.sqrt(inner) : 0f;
-            float n3x = logical_x3 * PPM; float n3y = logical_y3 * PPM;
+            canvas.drawColor(Color.parseColor("#0B0F1A"));
 
-            float[] rPos = estimateRouterPosition(n1x, n1y, n2x, n2y, n3x, n3y);
-            float rx = rPos[0]; float ry = rPos[1];
+            if (r1 == 0f && r2 == 0f && r3 == 0f) {
+                drawLegend(canvas, width, height);
+                return;
+            }
 
-            // Auto-center on first load
+            float ppm = 70f;
+
+            // Logical node layout
+            float n1x = 0f, n1y = 0f;
+            float n2x = d12 * ppm, n2y = 0f;
+
+            float logicalX3 = (d12 * d12 + d13 * d13 - d23 * d23) / (2f * d12);
+            float inner = d13 * d13 - logicalX3 * logicalX3;
+            float logicalY3 = inner > 0 ? (float) Math.sqrt(inner) : 0f;
+
+            float n3x = logicalX3 * ppm;
+            float n3y = logicalY3 * ppm;
+
+            // Hybrid router distances
+            float liveD1 = rssiToDistance(liveRssi1);
+            float liveD2 = rssiToDistance(liveRssi2);
+            float liveD3 = rssiToDistance(liveRssi3);
+
+            float finalR1 = 0.75f * r1 + 0.25f * liveD1;
+            float finalR2 = 0.75f * r2 + 0.25f * liveD2;
+            float finalR3 = 0.75f * r3 + 0.25f * liveD3;
+
+            float[] routerPos = trilaterate(n1x, n1y, n2x, n2y, n3x, n3y, finalR1, finalR2, finalR3);
+            float rx = routerPos[0];
+            float ry = routerPos[1];
+
+            // EMA smoothing
+            float alpha = 0.15f;
+            if (!routerInitialized) {
+                smoothRx = rx;
+                smoothRy = ry;
+                routerInitialized = true;
+            } else {
+                smoothRx = alpha * rx + (1f - alpha) * smoothRx;
+                smoothRy = alpha * ry + (1f - alpha) * smoothRy;
+            }
+            rx = smoothRx;
+            ry = smoothRy;
+
+            // Initial centering
             if (!isInitialCenterDone) {
                 float centerX = (n1x + n2x + n3x + rx) / 4f;
                 float centerY = (n1y + n2y + n3y + ry) / 4f;
@@ -660,119 +747,235 @@ public class MainActivity extends AppCompatActivity {
             }
 
             canvas.save();
-            canvas.concat(transformMatrix); // Apply Pan & Zoom
+            canvas.concat(transformMatrix);
 
-            // 2. DRAW MASSIVE GPU GRADIENTS
-            // The radius is massive so they overlap heavily and eliminate any isolated black spaces.
-            float gradRadius = Math.max(width, height) * 1.5f;
+            // Draw subtle grid
+            drawGrid(canvas, width, height);
 
-            // Router Origin (-30 dBm Dark Green)
-            int cR = getColorForRssi(-30f, 200);
-            heatPaint.setShader(new RadialGradient(rx, ry, gradRadius, cR, Color.TRANSPARENT, Shader.TileMode.CLAMP));
-            canvas.drawCircle(rx, ry, gradRadius, heatPaint);
+            // Smooth heatmap
+            drawSmoothHeatmap(canvas, width, height, n1x, n1y, n2x, n2y, n3x, n3y, rx, ry);
 
-            // Node 1 Gradient
-            int c1 = getColorForRssi(liveRssi1, 180);
-            heatPaint.setShader(new RadialGradient(n1x, n1y, gradRadius, c1, Color.TRANSPARENT, Shader.TileMode.CLAMP));
-            canvas.drawCircle(n1x, n1y, gradRadius, heatPaint);
+            // Geometry triangle
+            Path path = new Path();
+            path.moveTo(n1x, n1y);
+            path.lineTo(n2x, n2y);
+            path.lineTo(n3x, n3y);
+            path.close();
+            canvas.drawPath(path, linePaint);
 
-            // Node 2 Gradient
-            int c2 = getColorForRssi(liveRssi2, 180);
-            heatPaint.setShader(new RadialGradient(n2x, n2y, gradRadius, c2, Color.TRANSPARENT, Shader.TileMode.CLAMP));
-            canvas.drawCircle(n2x, n2y, gradRadius, heatPaint);
-
-            // Node 3 Gradient
-            int c3 = getColorForRssi(liveRssi3, 180);
-            heatPaint.setShader(new RadialGradient(n3x, n3y, gradRadius, c3, Color.TRANSPARENT, Shader.TileMode.CLAMP));
-            canvas.drawCircle(n3x, n3y, gradRadius, heatPaint);
-
-            // 3. DRAW MESH GEOMETRY & FIXED SIZE UI
-
-            // Get current scale to counteract zoom for UI elements
+            // Scale compensation
             float[] values = new float[9];
             transformMatrix.getValues(values);
             float currentScale = values[Matrix.MSCALE_X];
-            if (currentScale == 0) currentScale = 1f;
+            if (currentScale == 0f) currentScale = 1f;
 
-            linePaint.setStrokeWidth(5f / currentScale);
+            float nodeRadius = 10f / currentScale;
+            float routerDotRadius = 9f / currentScale;
+            float routerRingRadius = 18f / currentScale;
 
-            Path path = new Path();
-            path.moveTo(n1x, n1y); path.lineTo(n2x, n2y); path.lineTo(n3x, n3y); path.close();
-            canvas.drawPath(path, linePaint);
+            textPaint.setTextSize(22f / currentScale);
+            linePaint.setStrokeWidth(2f / currentScale);
+            routerRingPaint.setStrokeWidth(3f / currentScale);
 
-            // Hardware Nodes
-            float nodeRadius = 25f / currentScale;
+            // Nodes
             canvas.drawCircle(n1x, n1y, nodeRadius, nodeDotPaint);
             canvas.drawCircle(n2x, n2y, nodeRadius, nodeDotPaint);
             canvas.drawCircle(n3x, n3y, nodeRadius, nodeDotPaint);
 
-            textPaint.setTextSize(40f / currentScale);
-            float nodeTextOffsetX = 30f / currentScale;
-            float nodeTextOffsetY = 40f / currentScale;
+            canvas.drawText("N1", n1x - 18f / currentScale, n1y - 14f / currentScale, textPaint);
+            canvas.drawText("N2", n2x - 18f / currentScale, n2y - 14f / currentScale, textPaint);
+            canvas.drawText("N3", n3x - 18f / currentScale, n3y - 14f / currentScale, textPaint);
 
-            canvas.drawText("N1", n1x - nodeTextOffsetX, n1y - nodeTextOffsetY, textPaint);
-            canvas.drawText("N2", n2x - nodeTextOffsetX, n2y - nodeTextOffsetY, textPaint);
-            canvas.drawText("N3", n3x - nodeTextOffsetX, n3y - nodeTextOffsetY, textPaint);
-
-            // Router Anchor
-            float routerDotRadius = 20f / currentScale;
-            Paint routerDot = new Paint(); routerDot.setColor(Color.WHITE); routerDot.setStyle(Paint.Style.FILL);
-            canvas.drawCircle(rx, ry, routerDotRadius, routerDot);
-
-            float routerRingRadius = 35f / currentScale;
-            Paint routerRing = new Paint(); routerRing.setColor(Color.GREEN); routerRing.setStyle(Paint.Style.STROKE); routerRing.setStrokeWidth(6f / currentScale);
-            canvas.drawCircle(rx, ry, routerRingRadius, routerRing);
-
-            float routerTextOffsetX = 60f / currentScale;
-            float routerTextOffsetY = 50f / currentScale;
-            canvas.drawText("ROUTER", rx - routerTextOffsetX, ry - routerTextOffsetY, textPaint);
+            // Router
+            canvas.drawCircle(rx, ry, routerDotRadius, routerDotPaint);
+            canvas.drawCircle(rx, ry, routerRingRadius, routerRingPaint);
+            canvas.drawText("ROUTER", rx - 42f / currentScale, ry - 18f / currentScale, textPaint);
 
             canvas.restore();
+
+            // Fixed legend on screen
+            drawLegend(canvas, width, height);
         }
 
-        // --- MATH UTILS ---
-        private float rssiToDistance(float rssi) {
-            float A = -40f;
-            float n = 2.5f;
-            return (float) Math.pow(10, (A - rssi) / (10 * n));
+        private void drawSmoothHeatmap(Canvas canvas, int viewWidth, int viewHeight,
+                                       float n1x, float n1y, float n2x, float n2y,
+                                       float n3x, float n3y, float rx, float ry) {
+
+            float[] inverse = new float[9];
+            Matrix inverseMatrix = new Matrix();
+            transformMatrix.invert(inverseMatrix);
+            inverseMatrix.getValues(inverse);
+
+            float[] values = new float[9];
+            transformMatrix.getValues(values);
+            float scale = values[Matrix.MSCALE_X];
+
+            int cellSize = (int)(18 / scale);  // 🔥 dynamic resolution
+            cellSize = Math.max(6, Math.min(cellSize, 25));
+            int alpha = 150;
+
+            for (int sx = 0; sx < viewWidth; sx += cellSize) {
+                for (int sy = 0; sy < viewHeight; sy += cellSize) {
+
+                    float[] pts = {
+                            sx, sy,
+                            sx + cellSize, sy,
+                            sx, sy + cellSize,
+                            sx + cellSize, sy + cellSize,
+                            sx + cellSize / 2f, sy + cellSize / 2f
+                    };
+
+                    inverseMatrix.mapPoints(pts);
+
+                    float total = 0f;
+
+                    for (int i = 0; i < pts.length; i += 2) {
+                        float wx = pts[i];
+                        float wy = pts[i + 1];
+                        // slight router contribution for realism
+                        float dr = distance(wx, wy, rx, ry);
+// Router should dominate (WiFi source)
+                        float sr = 6.5f / (1f + 0.0005f * dr * dr);
+                        total += sr;
+                    }
+
+                    total /= 5f;
+
+                    int color = getHeatmapColor(total, alpha);
+                    float radius = cellSize * 4.5f;
+                    heatCellPaint.setColor(color);
+                    canvas.drawCircle(pts[8], pts[9], radius, heatCellPaint);
+                }
+            }
         }
 
-        private float[] estimateRouterPosition(float n1x, float n1y, float n2x, float n2y, float n3x, float n3y) {
-            float r1 = rssiToDistance(liveRssi1); float r2 = rssiToDistance(liveRssi2); float r3 = rssiToDistance(liveRssi3);
-            float A = 2*(n2x - n1x); float B = 2*(n2y - n1y);
-            float C = r1*r1 - r2*r2 - n1x*n1x + n2x*n2x - n1y*n1y + n2y*n2y;
-            float D = 2*(n3x - n1x); float E = 2*(n3y - n1y);
-            float F = r1*r1 - r3*r3 - n1x*n1x + n3x*n3x - n1y*n1y + n3y*n3y;
-            float denom = (A*E - B*D);
-            if (Math.abs(denom) < 1e-6) return new float[]{(n1x+n2x+n3x)/3f, (n1y+n2y+n3y)/3f};
-            float x = (C*E - B*F) / denom; float y = (A*F - C*D) / denom;
+        private void drawGrid(Canvas canvas, int width, int height) {
+            int grid = 1000; // large because drawing in transformed world coordinates
+            for (int x = -4000; x <= 4000; x += grid) {
+                canvas.drawLine(x, -4000, x, 4000, gridPaint);
+            }
+            for (int y = -4000; y <= 4000; y += grid) {
+                canvas.drawLine(-4000, y, 4000, y, gridPaint);
+            }
+        }
+
+        private void drawLegend(Canvas canvas, int width, int height) {
+            float boxLeft = 24f;
+            float boxTop = height - 150f;
+            float boxRight = width - 24f;
+            float boxBottom = height - 55f;
+
+            Paint bgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            bgPaint.setColor(Color.argb(180, 20, 28, 45));
+            canvas.drawRoundRect(boxLeft, boxTop, boxRight, boxBottom, 18f, 18f, bgPaint);
+
+            legendTextPaint.setTextSize(24f);
+            canvas.drawText("Signal Strength", boxLeft + 20f, boxTop + 28f, legendTextPaint);
+
+            float barLeft = boxLeft + 20f;
+            float barTop = boxTop + 40f;
+            float barRight = boxRight - 20f;
+            float barBottom = boxTop + 70f;
+
+            LinearGradient gradient = new LinearGradient(
+                    barLeft, barTop, barRight, barTop,
+                    new int[]{
+                            Color.parseColor("#8B0000"), // weak
+                            Color.RED,
+                            Color.parseColor("#FF8C00"),
+                            Color.YELLOW,
+                            Color.parseColor("#7CFC00"),
+                            Color.parseColor("#006400")  // strong
+                    },
+                    null,
+                    Shader.TileMode.CLAMP
+            );
+            legendBarPaint.setShader(gradient);
+            canvas.drawRoundRect(barLeft, barTop, barRight, barBottom, 12f, 12f, legendBarPaint);
+            legendBarPaint.setShader(null);
+
+            Paint smallText = new Paint(Paint.ANTI_ALIAS_FLAG);
+            smallText.setColor(Color.WHITE);
+            smallText.setTextSize(20f);
+
+            canvas.drawText("Weak", barLeft, barBottom + 22f, smallText);
+            canvas.drawText("Medium", (barLeft + barRight) / 2f - 35f, barBottom + 22f, smallText);
+            canvas.drawText("Strong", barRight - 55f, barBottom + 22f, smallText);
+        }
+
+        private float[] trilaterate(float x1, float y1, float x2, float y2, float x3, float y3,
+                                    float r1, float r2, float r3) {
+
+            float A = 2f * (x2 - x1);
+            float B = 2f * (y2 - y1);
+            float C = r1 * r1 - r2 * r2 - x1 * x1 + x2 * x2 - y1 * y1 + y2 * y2;
+
+            float D = 2f * (x3 - x1);
+            float E = 2f * (y3 - y1);
+            float F = r1 * r1 - r3 * r3 - x1 * x1 + x3 * x3 - y1 * y1 + y3 * y3;
+
+            float denom = (A * E - B * D);
+
+            if (Math.abs(denom) < 1e-6f) {
+                return new float[]{(x1 + x2 + x3) / 3f, (y1 + y2 + y3) / 3f};
+            }
+
+            float x = (C * E - B * F) / denom;
+            float y = (A * F - C * D) / denom;
             return new float[]{x, y};
         }
 
-        // True Wi-Fi Signal Colors (Dark Green = Strong, Dark Red = Weak)
-        private int getColorForRssi(float rssi, int alpha) {
-            float min = -95f; float max = -30f;
-            float t = (rssi - min) / (max - min);
-            t = Math.max(0f, Math.min(1f, t));
+        private float rssiToDistance(float rssi) {
+            float A = -40f;
+            float n = 2.5f;
+            return (float) Math.pow(10f, (A - rssi) / (10f * n));
+        }
 
-            int[] colors = {
-                    Color.parseColor("#8B0000"), // Dark Red (-95 dBm)
-                    Color.parseColor("#FF0000"), // Red
-                    Color.parseColor("#FF8C00"), // Orange
-                    Color.parseColor("#FFFF00"), // Yellow
-                    Color.parseColor("#00E676"), // Bright Green (-45 dBm)
-                    Color.parseColor("#004D00")  // Dark Green (-30 dBm)
+        private float distance(float x1, float y1, float x2, float y2) {
+            float dx = x1 - x2;
+            float dy = y1 - y2;
+            return (float) Math.sqrt(dx * dx + dy * dy);
+        }
+
+        private float signalStrength(float d, float rssi) {
+
+            d = Math.max(d, 1f);
+
+            // Normalize RSSI (-100 to -30 → 0 to 1)
+            float base = (rssi + 100f) / 70f;
+            base = Math.max(0.05f, Math.min(1f, base));
+
+            // Better decay (slower near source, faster far away)
+            return base / (1f + 0.0005f * d * d);
+        }
+        private int getHeatmapColor(float value, int alpha) {
+            float v = (float) Math.pow(Math.min(1f, value * 2.8f), 0.15);
+
+            int[] colors = new int[]{
+                    Color.parseColor("#8B0000"), // dark red
+                    Color.RED,
+                    Color.parseColor("#FF8C00"), // orange
+                    Color.YELLOW,
+                    Color.parseColor("#7CFC00"), // light green
+                    Color.parseColor("#006400")  // dark green
             };
 
-            float scaled = t * (colors.length - 1);
+            float scaled = v * (colors.length - 1);
             int index = (int) scaled;
             float fraction = scaled - index;
-            if (index >= colors.length - 1) return colors[colors.length - 1];
 
-            int c1 = colors[index]; int c2 = colors[index + 1];
-            int r = (int)(Color.red(c1) + fraction * (Color.red(c2) - Color.red(c1)));
-            int g = (int)(Color.green(c1) + fraction * (Color.green(c2) - Color.green(c1)));
-            int b = (int)(Color.blue(c1) + fraction * (Color.blue(c2) - Color.blue(c1)));
+            if (index >= colors.length - 1) {
+                int c = colors[colors.length - 1];
+                return Color.argb(alpha, Color.red(c), Color.green(c), Color.blue(c));
+            }
+
+            int c1 = colors[index];
+            int c2 = colors[index + 1];
+
+            int r = (int) (Color.red(c1) + fraction * (Color.red(c2) - Color.red(c1)));
+            int g = (int) (Color.green(c1) + fraction * (Color.green(c2) - Color.green(c1)));
+            int b = (int) (Color.blue(c1) + fraction * (Color.blue(c2) - Color.blue(c1)));
+
             return Color.argb(alpha, r, g, b);
         }
     }
