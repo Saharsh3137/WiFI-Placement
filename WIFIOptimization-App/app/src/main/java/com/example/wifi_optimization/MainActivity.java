@@ -3,6 +3,7 @@ package com.example.wifi_optimization;
 import android.Manifest;
 import android.bluetooth.*;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -10,6 +11,7 @@ import android.graphics.Path;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffXfermode;
 import android.graphics.RadialGradient;
+import android.graphics.Rect;
 import android.graphics.Shader;
 import android.os.*;
 import android.content.Context;
@@ -483,7 +485,7 @@ public class MainActivity extends AppCompatActivity {
         updateGraphs(avg);
 
         // Push the live telemetry into the Heatmap graphics engine
-        heatmapView.updateLiveSignals(nodes[0].rssi, nodes[1].rssi, nodes[2].rssi);
+        heatmapView.updateLiveSignals(nodes[0].rssi, nodes[1].rssi, nodes[2].rssi, nodes[0].latency, nodes[1].latency, nodes[2].latency,nodes[0].loss, nodes[1].loss, nodes[2].loss);
     }
 
     private void updateGraphs(NodeData avg) {
@@ -574,6 +576,8 @@ public class MainActivity extends AppCompatActivity {
 
         // Store live signal strength
         float liveRssi1 = -99f, liveRssi2 = -99f, liveRssi3 = -99f;
+        float latency1, latency2, latency3;
+        float loss1, loss2, loss3;
 
         public HeatmapView(Context context) {
             super(context);
@@ -589,10 +593,16 @@ public class MainActivity extends AppCompatActivity {
         }
 
         // Method to catch live data from Dashboard
-        public void updateLiveSignals(float rssi1, float rssi2, float rssi3) {
+        public void updateLiveSignals(float rssi1, float rssi2, float rssi3, float latency1, float latency2, float latency3, float loss1, float loss2, float loss3) {
             this.liveRssi1 = rssi1;
             this.liveRssi2 = rssi2;
             this.liveRssi3 = rssi3;
+            this.latency1 = latency1;
+            this.latency2 = latency2;
+            this.latency3 = latency3;
+            this.loss1 = loss1;
+            this.loss2 = loss2;
+            this.loss3 = loss3;
             postInvalidate(); // Force a redraw when new data arrives
         }
 
@@ -604,23 +614,25 @@ public class MainActivity extends AppCompatActivity {
             this.r1 = r1; this.r2 = r2; this.r3 = r3;
             postInvalidate();
         }
-
         @Override
         protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
+
             if (r1 == 0 && r2 == 0 && r3 == 0) return;
 
-            int w = getWidth();
-            int h = getHeight();
+            int width = getWidth();
+            int height = getHeight();
 
-            // 1. DYNAMIC COORDINATE MATH (Law of Cosines)
+            // ==============================
+            // 1. NODE POSITION
+            // ==============================
             float logical_x1 = 0, logical_y1 = 0;
             float logical_x2 = d12, logical_y2 = 0;
-            float logical_x3 = (d12 * d12 + d13 * d13 - d23 * d23) / (2 * d12);
-            float innerSqrt = d13 * d13 - logical_x3 * logical_x3;
-            float logical_y3 = innerSqrt > 0 ? (float) Math.sqrt(innerSqrt) : 0f;
 
-            // 2. SCALE TO SCREEN
+            float logical_x3 = (d12 * d12 + d13 * d13 - d23 * d23) / (2 * d12);
+            float inner = d13 * d13 - logical_x3 * logical_x3;
+            float logical_y3 = inner > 0 ? (float) Math.sqrt(inner) : 0f;
+
             float max_x = Math.max(Math.max(logical_x1, logical_x2), logical_x3);
             float min_x = Math.min(Math.min(logical_x1, logical_x2), logical_x3);
             float max_y = Math.max(Math.max(logical_y1, logical_y2), logical_y3);
@@ -630,45 +642,102 @@ public class MainActivity extends AppCompatActivity {
             float logical_height = max_y - min_y;
 
             float max_radius = Math.max(Math.max(r1, r2), r3);
-            float total_logical_width = logical_width + (max_radius * 2);
-            float total_logical_height = logical_height + (max_radius * 2);
 
-            float pixelsPerMeter = Math.min(w / total_logical_width, h / total_logical_height);
+            float total_width = logical_width + (max_radius * 2);
+            float total_height = logical_height + (max_radius * 2);
 
-            float offsetX = (w - (logical_width * pixelsPerMeter)) / 2f - (min_x * pixelsPerMeter);
-            float offsetY = (h - (logical_height * pixelsPerMeter)) / 2f - (min_y * pixelsPerMeter);
+            float ppm = Math.min(width / total_width, height / total_height);
 
-            float n1x = logical_x1 * pixelsPerMeter + offsetX; float n1y = logical_y1 * pixelsPerMeter + offsetY;
-            float n2x = logical_x2 * pixelsPerMeter + offsetX; float n2y = logical_y2 * pixelsPerMeter + offsetY;
-            float n3x = logical_x3 * pixelsPerMeter + offsetX; float n3y = logical_y3 * pixelsPerMeter + offsetY;
+            float offsetX = (width - logical_width * ppm) / 2f - min_x * ppm;
+            float offsetY = (height - logical_height * ppm) / 2f - min_y * ppm;
 
-            // 3. COLOR MAPPING (Convert RSSI to Heatmap Colors)
-            int colorN1 = getColorForRssi(liveRssi1);
-            int colorN2 = getColorForRssi(liveRssi2);
-            int colorN3 = getColorForRssi(liveRssi3);
+            float n1x = logical_x1 * ppm + offsetX;
+            float n1y = logical_y1 * ppm + offsetY;
 
-            // 4. DRAW THE HEATMAP GRADIENTS (GPU Accelerated)
-            float gradientRadius = 300f; // Adjust this to make the heat spread further
+            float n2x = logical_x2 * ppm + offsetX;
+            float n2y = logical_y2 * ppm + offsetY;
 
-            Paint heatPaint = new Paint();
-            // Use SCREEN blend mode so overlapping colors mix together like light
-            heatPaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.SCREEN));
+            float n3x = logical_x3 * ppm + offsetX;
+            float n3y = logical_y3 * ppm + offsetY;
+            float[] router = estimateRouterPosition(n1x, n1y, n2x, n2y, n3x, n3y);
+            float rx = router[0];
+            float ry = router[1];
 
-            heatPaint.setShader(new RadialGradient(n1x, n1y, gradientRadius, colorN1, Color.TRANSPARENT, Shader.TileMode.CLAMP));
-            canvas.drawCircle(n1x, n1y, gradientRadius, heatPaint);
+            // ==============================
+            // 2. SMOOTH HEATMAP
+            // ==============================
+            int scale = 2; // smaller = smoother
 
-            heatPaint.setShader(new RadialGradient(n2x, n2y, gradientRadius, colorN2, Color.TRANSPARENT, Shader.TileMode.CLAMP));
-            canvas.drawCircle(n2x, n2y, gradientRadius, heatPaint);
+            int bmpW = width / scale;
+            int bmpH = height / scale;
 
-            heatPaint.setShader(new RadialGradient(n3x, n3y, gradientRadius, colorN3, Color.TRANSPARENT, Shader.TileMode.CLAMP));
-            canvas.drawCircle(n3x, n3y, gradientRadius, heatPaint);
+            Bitmap bmp = Bitmap.createBitmap(bmpW, bmpH, Bitmap.Config.ARGB_8888);
 
-            // 5. DRAW THE MESH FRAMEWORK (Lines on top of the heat)
-            Path meshPath = new Path();
-            meshPath.moveTo(n1x, n1y); meshPath.lineTo(n2x, n2y); meshPath.lineTo(n3x, n3y); meshPath.close();
-            canvas.drawPath(meshPath, linePaint);
+            float maxSignal = -100;
+            float maxX = 0, maxY = 0;
 
-            // 6. DRAW PHYSICAL NODES
+            for (int x = 0; x < bmpW; x++) {
+                for (int y = 0; y < bmpH; y++) {
+
+                    float realX = x * scale;
+                    float realY = y * scale;
+
+                    float finalRssi = computeSignal(realX, realY, rx, ry);
+
+                    if (finalRssi > maxSignal) {
+                        maxSignal = finalRssi;
+                        maxX = realX;
+                        maxY = realY;
+                    }
+
+                    bmp.setPixel(x, y, getHeatColor(finalRssi));
+                }
+            }
+
+            Paint paint = new Paint();
+            paint.setFilterBitmap(true);
+
+            canvas.drawBitmap(bmp, null, new Rect(0, 0, width, height), paint);
+
+            Paint routerPaint = new Paint();
+            routerPaint.setColor(Color.WHITE);
+            routerPaint.setStyle(Paint.Style.FILL);
+
+            canvas.drawCircle(rx, ry, 15f, routerPaint);
+
+            Paint routerRing = new Paint();
+            routerRing.setColor(Color.GREEN);
+            routerRing.setStyle(Paint.Style.STROKE);
+            routerRing.setStrokeWidth(4f);
+
+            canvas.drawCircle(rx, ry, 25f, routerRing);
+
+            canvas.drawText("R", rx - 10, ry - 30, textPaint);
+
+            // ==============================
+            // 3. STRONGEST POINT
+            // ==============================
+            Paint glow = new Paint();
+            glow.setShader(new RadialGradient(
+                    maxX, maxY,
+                    40f,
+                    Color.parseColor("#00FF88"),
+                    Color.TRANSPARENT,
+                    Shader.TileMode.CLAMP
+            ));
+            canvas.drawCircle(maxX, maxY, 40f, glow);
+
+            // ==============================
+            // 4. MESH + NODES
+            // ==============================
+            Path path = new Path();
+            path.moveTo(n1x, n1y);
+            path.lineTo(n2x, n2y);
+            path.lineTo(n3x, n3y);
+            path.close();
+
+            canvas.drawPath(path, linePaint);
+
             canvas.drawCircle(n1x, n1y, 20f, nodeDotPaint);
             canvas.drawCircle(n2x, n2y, 20f, nodeDotPaint);
             canvas.drawCircle(n3x, n3y, 20f, nodeDotPaint);
@@ -677,26 +746,91 @@ public class MainActivity extends AppCompatActivity {
             canvas.drawText("N2", n2x - 25, n2y - 30, textPaint);
             canvas.drawText("N3", n3x - 25, n3y - 30, textPaint);
         }
+        private float distance(float x1, float y1, float x2, float y2) {
+            return (float) Math.sqrt((x1 - x2)*(x1 - x2) + (y1 - y2)*(y1 - y2));
+        }
+        private float rssiToDistance(float rssi) {
+            float A = -40f; // RSSI at 1 meter (tune)
+            float n = 2.5f; // path loss exponent (2–4)
 
-        // Helper function to turn a negative RSSI number into a Red/Yellow/Blue color
-        private int getColorForRssi(float rssi) {
-            if (rssi == 0 || rssi <= -90) return Color.argb(150, 0, 0, 255); // Dead/Weak = Blue
-            if (rssi >= -40) return Color.argb(150, 255, 0, 0); // Perfect = Red
+            return (float) Math.pow(10, (A - rssi) / (10 * n));
+        }
+        private float[] estimateRouterPosition(
+                float n1x, float n1y,
+                float n2x, float n2y,
+                float n3x, float n3y) {
 
-            // Map the range -90 to -40 into a slider from 0.0 to 1.0
-            float normalized = (rssi + 90f) / 50f;
+            float r1 = rssiToDistance(liveRssi1);
+            float r2 = rssiToDistance(liveRssi2);
+            float r3 = rssiToDistance(liveRssi3);
 
-            if (normalized < 0.5f) {
-                // Blend Blue to Green
-                int g = (int) ((normalized * 2) * 255);
-                int b = (int) ((1 - (normalized * 2)) * 255);
-                return Color.argb(150, 0, g, b);
-            } else {
-                // Blend Green to Red
-                int r = (int) (((normalized - 0.5f) * 2) * 255);
-                int g = (int) ((1 - ((normalized - 0.5f) * 2)) * 255);
-                return Color.argb(150, r, g, 0);
+            // Trilateration equations
+            float A = 2*(n2x - n1x);
+            float B = 2*(n2y - n1y);
+            float C = r1*r1 - r2*r2 - n1x*n1x + n2x*n2x - n1y*n1y + n2y*n2y;
+
+            float D = 2*(n3x - n1x);
+            float E = 2*(n3y - n1y);
+            float F = r1*r1 - r3*r3 - n1x*n1x + n3x*n3x - n1y*n1y + n3y*n3y;
+
+            float denom = (A*E - B*D);
+
+            if (Math.abs(denom) < 1e-6) {
+                return new float[]{(n1x+n2x+n3x)/3f, (n1y+n2y+n3y)/3f};
             }
+
+            float x = (C*E - B*F) / denom;
+            float y = (A*F - C*D) / denom;
+
+            return new float[]{x, y};
+        }
+        private float computeSignal(float x, float y, float rx, float ry) {
+
+            float d = distance(x, y, rx, ry);
+
+            float PATH_LOSS = 20f;        // less aggressive decay
+            float REFERENCE_RSSI = -30f;  // stronger starting point
+
+            float signal = REFERENCE_RSSI - (PATH_LOSS * (float)Math.log10(d + 1));
+
+            return signal;
+        }
+        private int getHeatColor(float rssi) {
+
+            // Define visible range
+            float min = -90f;
+            float max = -30f;
+
+            float t = (rssi - min) / (max - min);
+            t = Math.max(0f, Math.min(1f, t));
+
+            return interpolateColor(t);
+        }
+        private int interpolateColor(float t) {
+            int[] colors = {
+                    Color.parseColor("#0B0F1A"), // no signal
+                    Color.parseColor("#3E2723"), // dark brown/red
+                    Color.parseColor("#FF6D00"), // orange
+                    Color.parseColor("#FFD600"), // yellow
+                    Color.parseColor("#4CAF50"), // green
+                    Color.parseColor("#00E676")  // bright green (strongest)
+            };
+
+            float scaled = t * (colors.length - 1);
+            int index = (int) scaled;
+            float fraction = scaled - index;
+
+            if (index >= colors.length - 1) return colors[colors.length - 1];
+
+            return blendColors(colors[index], colors[index + 1], fraction);
+        }
+        private int blendColors(int c1, int c2, float ratio) {
+
+            int r = (int)(Color.red(c1) + ratio * (Color.red(c2) - Color.red(c1)));
+            int g = (int)(Color.green(c1) + ratio * (Color.green(c2) - Color.green(c1)));
+            int b = (int)(Color.blue(c1) + ratio * (Color.blue(c2) - Color.blue(c1)));
+
+            return Color.argb(200, r, g, b);
         }
     }
 }
