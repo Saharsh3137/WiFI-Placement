@@ -3,6 +3,7 @@ package com.example.wifi_optimization;
 import android.Manifest;
 import android.bluetooth.*;
 import android.content.Context;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Matrix;
@@ -65,6 +66,7 @@ public class MainActivity extends AppCompatActivity {
         double totalRssiSum = 0;
         long rssiCount = 0;
     }
+
     NodeData[] nodes = new NodeData[3];
     int graphIndex = 0;
 
@@ -124,9 +126,12 @@ public class MainActivity extends AppCompatActivity {
 
         for (int i = 0; i < 3; i++) nodes[i] = new NodeData();
 
-        setupChart(rssiChart, -100f, -15f); initChartData(rssiChart);
-        setupChart(latencyChart, 0f, 150f); initChartData(latencyChart);
-        setupChart(packetChart, 0f, 20f); initChartData(packetChart);
+        setupChart(rssiChart, -100f, -15f);
+        initChartData(rssiChart);
+        setupChart(latencyChart, 0f, 150f);
+        initChartData(latencyChart);
+        setupChart(packetChart, 0f, 20f);
+        initChartData(packetChart);
 
         bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
 
@@ -142,7 +147,8 @@ public class MainActivity extends AppCompatActivity {
         toggleWifiBtn.setOnClickListener(v -> {
             boolean isConnected = (socket != null && socket.isConnected());
             if (!isConnected && !demoModeSwitch.isChecked()) {
-                Toast.makeText(MainActivity.this, "Connect to hardware first!", Toast.LENGTH_SHORT).show(); return;
+                Toast.makeText(MainActivity.this, "Connect to hardware first!", Toast.LENGTH_SHORT).show();
+                return;
             }
             wifiCard.setVisibility(wifiCard.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
         });
@@ -177,8 +183,10 @@ public class MainActivity extends AppCompatActivity {
             public void onTick(long millisUntilFinished) {
                 int sec = (int) (millisUntilFinished / 1000);
                 if (sec > 13) calibStatusText.setText("Mapping Node 1 Network... (" + sec + "s)");
-                else if (sec > 8) calibStatusText.setText("Mapping Node 2 Network... (" + sec + "s)");
-                else if (sec > 3) calibStatusText.setText("Mapping Node 3 Network... (" + sec + "s)");
+                else if (sec > 8)
+                    calibStatusText.setText("Mapping Node 2 Network... (" + sec + "s)");
+                else if (sec > 3)
+                    calibStatusText.setText("Mapping Node 3 Network... (" + sec + "s)");
                 else calibStatusText.setText("Triangulating Router... (" + sec + "s)");
 
                 calibStatusText.setTextColor(Color.parseColor("#FFD740"));
@@ -187,7 +195,8 @@ public class MainActivity extends AppCompatActivity {
                     try {
                         outputStream.write("CALIBRATE\n".getBytes());
                         outputStream.flush();
-                    } catch (Exception e) {}
+                    } catch (Exception e) {
+                    }
                 }
             }
 
@@ -204,9 +213,12 @@ public class MainActivity extends AppCompatActivity {
     private void resetSessionData() {
         for (int i = 0; i < 3; i++) nodes[i] = new NodeData();
         graphIndex = 0;
-        rssiChart.clear(); initChartData(rssiChart);
-        latencyChart.clear(); initChartData(latencyChart);
-        packetChart.clear(); initChartData(packetChart);
+        rssiChart.clear();
+        initChartData(rssiChart);
+        latencyChart.clear();
+        initChartData(latencyChart);
+        packetChart.clear();
+        initChartData(packetChart);
         qualityText.setText("--/100");
         distanceReadoutText.setText("Awaiting mesh data...");
         Toast.makeText(this, "Session Data Cleared", Toast.LENGTH_SHORT).show();
@@ -242,7 +254,7 @@ public class MainActivity extends AppCompatActivity {
                 demoRunnable = new Runnable() {
                     @Override
                     public void run() {
-                        for(int i = 0; i < 3; i++) {
+                        for (int i = 0; i < 3; i++) {
                             demoRssi[i] += (random.nextFloat() - 0.5f) * 4f;
                             demoRssi[i] = Math.max(-95f, Math.min(-35f, demoRssi[i]));
                             demoLatency[i] += (random.nextFloat() - 0.5f) * 5f;
@@ -254,7 +266,7 @@ public class MainActivity extends AppCompatActivity {
                             int j = random.nextInt(5);
 
                             String fakeData = String.format(Locale.US, "%d,%d,%d,%.2f,%.2f,%d,%d\n",
-                                    i + 1, (int)demoRssi[i], s, v, l, j, (int)demoLatency[i]);
+                                    i + 1, (int) demoRssi[i], s, v, l, j, (int) demoLatency[i]);
                             process(fakeData);
                         }
                         demoHandler.postDelayed(this, 1000);
@@ -301,7 +313,10 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void disconnectBT() {
-        try { if (socket != null) socket.close(); } catch (Exception ignored) {}
+        try {
+            if (socket != null) socket.close();
+        } catch (Exception ignored) {
+        }
         statusText.setText("Disconnected");
         statusText.setTextColor(Color.RED);
         connectButton.setVisibility(View.VISIBLE);
@@ -318,7 +333,8 @@ public class MainActivity extends AppCompatActivity {
         String pass = passInput.getText().toString().trim();
 
         if (ssid.isEmpty() || pass.isEmpty()) {
-            Toast.makeText(this, "SSID and Pass cannot be empty", Toast.LENGTH_SHORT).show(); return;
+            Toast.makeText(this, "SSID and Pass cannot be empty", Toast.LENGTH_SHORT).show();
+            return;
         }
 
         String payload = "WIFI:" + ssid + "," + pass + "\n";
@@ -393,7 +409,7 @@ public class MainActivity extends AppCompatActivity {
                     double r2 = rssiR2 <= -90 ? 20.0 : Math.pow(10, (-46.5 - rssiR2) / 31.9);
                     double r3 = rssiR3 <= -90 ? 20.0 : Math.pow(10, (-46.5 - rssiR3) / 31.9);
 
-                    heatmapView.updateMeshGeometry((float)d12, (float)d13, (float)d23, (float)r1, (float)r2, (float)r3);
+                    heatmapView.updateMeshGeometry((float) d12, (float) d13, (float) d23, (float) r1, (float) r2, (float) r3);
 
                     runOnUiThread(() -> {
                         calibStatusText.setText("Mesh Complete! Spatial Matrix built.");
@@ -402,8 +418,7 @@ public class MainActivity extends AppCompatActivity {
                     });
                 }
                 return;
-            }
-            else if (clean.startsWith("MESH_FAIL")) {
+            } else if (clean.startsWith("MESH_FAIL")) {
                 runOnUiThread(() -> {
                     calibStatusText.setText("Mesh Calibration Failed. Try again.");
                     calibStatusText.setTextColor(Color.RED);
@@ -417,7 +432,7 @@ public class MainActivity extends AppCompatActivity {
             if (p.length < 7) return;
 
             int id = Integer.parseInt(p[0]) - 1;
-            if(id >= 0 && id < 3) {
+            if (id >= 0 && id < 3) {
                 nodes[id].rssi = Float.parseFloat(p[1]);
                 nodes[id].snr = Float.parseFloat(p[2]);
                 nodes[id].voltage = Float.parseFloat(p[3]);
@@ -429,7 +444,8 @@ public class MainActivity extends AppCompatActivity {
                 nodes[id].totalRssiSum += nodes[id].rssi;
                 nodes[id].rssiCount++;
             }
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
     }
 
     private void updateUI() {
@@ -439,7 +455,7 @@ public class MainActivity extends AppCompatActivity {
         packetLossText.setText(String.format(Locale.US, "Avg Loss: %.1f %%", avg.loss));
 
         float finalScore = 0;
-        if(avg.rssi != 0) {
+        if (avg.rssi != 0) {
             float rssiScore = Math.max(0, Math.min(100, (avg.rssi + 85) * (100f / 45f)));
             finalScore = rssiScore - (avg.latency > 30 ? 15 : 0) - (avg.loss * 2);
             finalScore = Math.max(0, finalScore);
@@ -452,7 +468,9 @@ public class MainActivity extends AppCompatActivity {
             s.append("Node ").append(i + 1).append(": ");
             if (isOnline) {
                 float runningAvgRssi = 0;
-                if (nodes[i].rssiCount > 0) { runningAvgRssi = (float) (nodes[i].totalRssiSum / nodes[i].rssiCount); }
+                if (nodes[i].rssiCount > 0) {
+                    runningAvgRssi = (float) (nodes[i].totalRssiSum / nodes[i].rssiCount);
+                }
                 s.append("🟢 ")
                         .append(String.format(Locale.US, "%.0fms", nodes[i].latency))
                         .append("  |  🔋 ")
@@ -494,13 +512,23 @@ public class MainActivity extends AppCompatActivity {
             packetData.addEntry(new Entry(graphIndex, avg.loss), 3);
             graphIndex++;
 
-            rssiData.notifyDataChanged(); latencyData.notifyDataChanged(); packetData.notifyDataChanged();
-            rssiChart.notifyDataSetChanged(); latencyChart.notifyDataSetChanged(); packetChart.notifyDataSetChanged();
+            rssiData.notifyDataChanged();
+            latencyData.notifyDataChanged();
+            packetData.notifyDataChanged();
+            rssiChart.notifyDataSetChanged();
+            latencyChart.notifyDataSetChanged();
+            packetChart.notifyDataSetChanged();
 
-            rssiChart.setVisibleXRangeMaximum(50f); latencyChart.setVisibleXRangeMaximum(50f); packetChart.setVisibleXRangeMaximum(50f);
-            rssiChart.moveViewToX(graphIndex); latencyChart.moveViewToX(graphIndex); packetChart.moveViewToX(graphIndex);
+            rssiChart.setVisibleXRangeMaximum(50f);
+            latencyChart.setVisibleXRangeMaximum(50f);
+            packetChart.setVisibleXRangeMaximum(50f);
+            rssiChart.moveViewToX(graphIndex);
+            latencyChart.moveViewToX(graphIndex);
+            packetChart.moveViewToX(graphIndex);
 
-            rssiChart.invalidate(); latencyChart.invalidate(); packetChart.invalidate();
+            rssiChart.invalidate();
+            latencyChart.invalidate();
+            packetChart.invalidate();
         }
     }
 
@@ -509,12 +537,20 @@ public class MainActivity extends AppCompatActivity {
         int c = 0;
         for (NodeData n : nodes) {
             if (System.currentTimeMillis() - n.lastUpdate < 5000 && n.lastUpdate != 0) {
-                a.rssi += n.rssi; a.snr += n.snr; a.latency += n.latency;
-                a.jitter += n.jitter; a.loss += n.loss; c++;
+                a.rssi += n.rssi;
+                a.snr += n.snr;
+                a.latency += n.latency;
+                a.jitter += n.jitter;
+                a.loss += n.loss;
+                c++;
             }
         }
         if (c > 0) {
-            a.rssi /= c; a.snr /= c; a.latency /= c; a.jitter /= c; a.loss /= c;
+            a.rssi /= c;
+            a.snr /= c;
+            a.latency /= c;
+            a.jitter /= c;
+            a.loss /= c;
         }
         return a;
     }
@@ -542,11 +578,16 @@ public class MainActivity extends AppCompatActivity {
         int[] colors = {Color.RED, Color.GREEN, Color.YELLOW};
         for (int i = 0; i < 3; i++) {
             LineDataSet set = new LineDataSet(new ArrayList<>(), "Node " + (i + 1));
-            set.setColor(colors[i]); set.setDrawCircles(false); set.setLineWidth(2f);
+            set.setColor(colors[i]);
+            set.setDrawCircles(false);
+            set.setLineWidth(2f);
             data.addDataSet(set);
         }
         LineDataSet avg = new LineDataSet(new ArrayList<>(), "Average");
-        avg.setColor(Color.WHITE); avg.setDrawCircles(false); avg.setLineWidth(3f); avg.enableDashedLine(10f, 5f, 0f);
+        avg.setColor(Color.WHITE);
+        avg.setDrawCircles(false);
+        avg.setLineWidth(3f);
+        avg.enableDashedLine(10f, 5f, 0f);
         data.addDataSet(avg);
         chart.setData(data);
     }
@@ -554,54 +595,100 @@ public class MainActivity extends AppCompatActivity {
     // =========================================================================
     // GPU ACCELERATED MESH ENGINE (SCREEN BLENDING & INTERACTIVITY)
     // =========================================================================
-    class HeatmapView extends View {
-        Paint nodeDotPaint, textPaint, linePaint, heatPaint;
-        float d12 = 1f, d13 = 1f, d23 = 1f, r1 = 0f, r2 = 0f, r3 = 0f;
 
-        // Failsafe state (Triangle Inequality)
+// =========================================================================
+    // DROP-IN REPLACEMENT: HeatmapView inner class
+    // Replace your entire existing HeatmapView class with this one.
+    // =========================================================================
+
+    class HeatmapView extends View {
+
+
+        // Heatmap Grid variables
+// True Heatmap Grid Engine Variables
+        private android.graphics.Bitmap heatMapBitmap;
+        private int[] heatPixels;
+        private final int GRID_RES_X = 45; // Low-res calculation grid, GPU stretches it smooth
+
+
+        // --- Paints ---
+        Paint textPaint, linePaint, heatPaint, contourPaint;
+        Paint optimalRingPaint, optimalLinePaint;
+
+        // --- Geometry ---
+        float d12 = 1f, d13 = 1f, d23 = 1f, r1 = 0f, r2 = 0f, r3 = 0f;
         float lastGood_d12 = 1f, lastGood_d13 = 1f, lastGood_d23 = 1f;
 
-        // Live Data
-        float liveRssi1 = -99f, liveRssi2 = -99f, liveRssi3 = -99f;
+        // --- Live RSSI ---
+        float liveRssi1 = -65f, liveRssi2 = -72f, liveRssi3 = -80f;
 
-        // Touch Interaction Matrix
+        // --- Touch / Pan / Zoom ---
         Matrix transformMatrix = new Matrix();
         ScaleGestureDetector scaleDetector;
         GestureDetector gestureDetector;
         boolean isInitialCenterDone = false;
 
+        // --- Animation ticker ---
+        private long animStartTime = System.currentTimeMillis();
+
         public HeatmapView(Context context) {
             super(context);
-            nodeDotPaint = new Paint(); nodeDotPaint.setColor(Color.WHITE); nodeDotPaint.setStyle(Paint.Style.FILL);
-            textPaint = new Paint(); textPaint.setColor(Color.WHITE); textPaint.setTextSize(40f); textPaint.setFakeBoldText(true);
-            linePaint = new Paint(); linePaint.setColor(Color.parseColor("#888888")); linePaint.setStrokeWidth(5f); linePaint.setStyle(Paint.Style.STROKE);
 
-            // This is the magic. It mathematically compounds intersecting signal colors.
-            heatPaint = new Paint();
+            setLayerType(View.LAYER_TYPE_HARDWARE, null);
+
+            heatPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
             heatPaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.SCREEN));
+
+            linePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            linePaint.setColor(Color.argb(160, 100, 180, 255));
+            linePaint.setStrokeWidth(3f);
+            linePaint.setStyle(Paint.Style.STROKE);
+            linePaint.setPathEffect(new android.graphics.DashPathEffect(new float[]{18f, 10f}, 0f));
+
+            contourPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            contourPaint.setStyle(Paint.Style.STROKE);
+            contourPaint.setPathEffect(new android.graphics.DashPathEffect(new float[]{6f, 10f}, 0f));
+
+            textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            textPaint.setColor(Color.WHITE);
+            textPaint.setTextSize(40f);
+            textPaint.setFakeBoldText(true);
+            textPaint.setShadowLayer(8f, 0f, 2f, Color.BLACK);
+
+            optimalRingPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            optimalRingPaint.setColor(Color.CYAN);
+            optimalRingPaint.setStyle(Paint.Style.STROKE);
+            optimalRingPaint.setPathEffect(new android.graphics.DashPathEffect(new float[]{12f, 12f}, 0f));
+
+            optimalLinePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            optimalLinePaint.setColor(Color.argb(130, 0, 220, 255));
+            optimalLinePaint.setStyle(Paint.Style.STROKE);
+            optimalLinePaint.setPathEffect(new android.graphics.DashPathEffect(new float[]{8f, 10f}, 0f));
 
             setupTouchListeners(context);
         }
 
         private void setupTouchListeners(Context context) {
-            scaleDetector = new ScaleGestureDetector(context, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
-                @Override
-                public boolean onScale(ScaleGestureDetector detector) {
-                    float scaleFactor = detector.getScaleFactor();
-                    transformMatrix.postScale(scaleFactor, scaleFactor, detector.getFocusX(), detector.getFocusY());
-                    invalidate();
-                    return true;
-                }
-            });
+            scaleDetector = new ScaleGestureDetector(context,
+                    new ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                        @Override
+                        public boolean onScale(ScaleGestureDetector detector) {
+                            float sf = detector.getScaleFactor();
+                            transformMatrix.postScale(sf, sf, detector.getFocusX(), detector.getFocusY());
+                            invalidate();
+                            return true;
+                        }
+                    });
 
-            gestureDetector = new GestureDetector(context, new GestureDetector.SimpleOnGestureListener() {
-                @Override
-                public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX, float distanceY) {
-                    transformMatrix.postTranslate(-distanceX, -distanceY);
-                    invalidate();
-                    return true;
-                }
-            });
+            gestureDetector = new GestureDetector(context,
+                    new GestureDetector.SimpleOnGestureListener() {
+                        @Override
+                        public boolean onScroll(MotionEvent e1, MotionEvent e2, float dX, float dY) {
+                            transformMatrix.postTranslate(-dX, -dY);
+                            invalidate();
+                            return true;
+                        }
+                    });
         }
 
         @Override
@@ -612,168 +699,383 @@ public class MainActivity extends AppCompatActivity {
         }
 
         public void updateLiveSignals(float rssi1, float rssi2, float rssi3) {
-            this.liveRssi1 = rssi1; this.liveRssi2 = rssi2; this.liveRssi3 = rssi3;
+            this.liveRssi1 = rssi1;
+            this.liveRssi2 = rssi2;
+            this.liveRssi3 = rssi3;
             invalidate();
         }
 
         public void updateMeshGeometry(float d12, float d13, float d23, float r1, float r2, float r3) {
-            d12 = Math.max(0.1f, d12); d13 = Math.max(0.1f, d13); d23 = Math.max(0.1f, d23);
+            // 1. Enforce minimum physical distance so nodes aren't inside each other
+            this.d12 = Math.max(0.1f, d12);
+            this.d13 = Math.max(0.1f, d13);
+            this.d23 = Math.max(0.1f, d23);
 
-            // THE PHYSICS ENFORCER
-            if ((d12 + d13 > d23) && (d12 + d23 > d13) && (d13 + d23 > d12)) {
-                lastGood_d12 = d12; lastGood_d13 = d13; lastGood_d23 = d23;
-                this.d12 = d12; this.d13 = d13; this.d23 = d23;
-            } else {
-                this.d12 = lastGood_d12; this.d13 = lastGood_d13; this.d23 = lastGood_d23;
+            // 2. THE PHYSICS ENFORCER — Proportional Stretching
+            // If RF noise makes the triangle impossible, dynamically stretch the short legs
+            // until they connect, guaranteeing we always have a 2D mesh plane.
+            if (this.d12 > this.d13 + this.d23) {
+                float scale = this.d12 / (this.d13 + this.d23) * 1.01f; // 1% buffer to force a 2D peak
+                this.d13 *= scale;
+                this.d23 *= scale;
+            } else if (this.d13 > this.d12 + this.d23) {
+                float scale = this.d13 / (this.d12 + this.d23) * 1.01f;
+                this.d12 *= scale;
+                this.d23 *= scale;
+            } else if (this.d23 > this.d12 + this.d13) {
+                float scale = this.d23 / (this.d12 + this.d13) * 1.01f;
+                this.d12 *= scale;
+                this.d13 *= scale;
             }
-            this.r1 = r1; this.r2 = r2; this.r3 = r3;
+
+            this.r1 = r1;
+            this.r2 = r2;
+            this.r3 = r3;
             invalidate();
         }
+
 
         @Override
         protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
-            int width = getWidth(); int height = getHeight();
+            int width = getWidth(), height = getHeight();
             if (width == 0 || height == 0 || (r1 == 0 && r2 == 0 && r3 == 0)) return;
 
-            // Base Background: Fills the entire screen with "Weak/Dead Zone" Dark Red
-            canvas.drawColor(Color.parseColor("#0B0F1A")); // Deep black/blue void base
+            canvas.drawColor(Color.parseColor("#1A0000"));
 
-            // 1. CALCULATE LOGICAL GEOMETRY
-            float PPM = 150f; // Pixels per meter layout scale
-            float n1x = 0; float n1y = 0;
-            float n2x = d12 * PPM; float n2y = 0;
-            float logical_x3 = (d12 * d12 + d13 * d13 - d23 * d23) / (2 * d12);
-            float inner = d13 * d13 - logical_x3 * logical_x3;
-            float logical_y3 = inner > 0 ? (float) Math.sqrt(inner) : 0f;
-            float n3x = logical_x3 * PPM; float n3y = logical_y3 * PPM;
+            final float PPM = 150f;
 
-            float[] rPos = estimateRouterPosition(n1x, n1y, n2x, n2y, n3x, n3y);
-            float rx = rPos[0]; float ry = rPos[1];
+            // 1. Mesh Physics
+            float safe_d12 = Math.max(0.1f, d12);
+            float safe_d13 = Math.max(0.1f, d13);
+            float safe_d23 = Math.max(0.1f, d23);
 
-            // Auto-center on first load
+            if (safe_d12 > safe_d13 + safe_d23) {
+                float scale = safe_d12 / (safe_d13 + safe_d23) * 1.05f;
+                safe_d13 *= scale; safe_d23 *= scale;
+            } else if (safe_d13 > safe_d12 + safe_d23) {
+                float scale = safe_d13 / (safe_d12 + safe_d23) * 1.05f;
+                safe_d12 *= scale; safe_d23 *= scale;
+            } else if (safe_d23 > safe_d12 + safe_d13) {
+                float scale = safe_d23 / (safe_d12 + safe_d13) * 1.05f;
+                safe_d12 *= scale; safe_d13 *= scale;
+            }
+
+            float m_n1x = 0f, m_n1y = 0f;
+            float m_n2x = safe_d12, m_n2y = 0f;
+            float m_lx3 = (safe_d12 * safe_d12 + safe_d13 * safe_d13 - safe_d23 * safe_d23) / (2 * safe_d12);
+            float inner = safe_d13 * safe_d13 - m_lx3 * m_lx3;
+            float m_n3y = inner > 0 ? (float) Math.sqrt(inner) : 0.1f;
+            float m_n3x = m_lx3;
+
+            float[] rPosMeters = estimateRouterPosition(m_n1x, m_n1y, m_n2x, m_n2y, m_n3x, m_n3y);
+            float m_rx = rPosMeters[0];
+            float m_ry = rPosMeters[1];
+
+            float n1x = m_n1x * PPM, n1y = m_n1y * PPM;
+            float n2x = m_n2x * PPM, n2y = m_n2y * PPM;
+            float n3x = m_n3x * PPM, n3y = m_n3y * PPM;
+            float rx = m_rx * PPM, ry = m_ry * PPM;
+
+            float optX = (n1x + n2x + n3x) / 3f;
+            float optY = (n1y + n2y + n3y) / 3f;
+
             if (!isInitialCenterDone) {
-                float centerX = (n1x + n2x + n3x + rx) / 4f;
-                float centerY = (n1y + n2y + n3y + ry) / 4f;
-                transformMatrix.postTranslate((width / 2f) - centerX, (height / 2f) - centerY);
+                float cx = (n1x + n2x + n3x) / 3f;
+                float cy = (n1y + n2y + n3y) / 3f;
+                transformMatrix.postTranslate((width / 2f) - cx, (height / 2f) - cy);
                 isInitialCenterDone = true;
             }
 
+            float[] vals = new float[9];
+            transformMatrix.getValues(vals);
+            float currentScale = vals[Matrix.MSCALE_X];
+            if (currentScale < 0.01f) currentScale = 1f;
+
+            float pulse = (float) (0.5 + 0.5 * Math.sin(((System.currentTimeMillis() - animStartTime) / 1000f) * Math.PI));
+
             canvas.save();
-            canvas.concat(transformMatrix); // Apply Pan & Zoom
+            canvas.concat(transformMatrix);
 
-            // 2. DRAW MASSIVE GPU GRADIENTS
-            // The radius is massive so they overlap heavily and eliminate any isolated black spaces.
-            float gradRadius = Math.max(width, height) * 1.5f;
+            // =========================================================================
+            // 2. TRUE ENVIRONMENTAL FLUID HEATMAP (Massive 160m Virtual Floor)
+            // =========================================================================
 
-            // Router Origin (-30 dBm Dark Green)
-            int cR = getColorForRssi(-30f, 200);
-            heatPaint.setShader(new RadialGradient(rx, ry, gradRadius, cR, Color.TRANSPARENT, Shader.TileMode.CLAMP));
-            canvas.drawCircle(rx, ry, gradRadius, heatPaint);
+            // Create a 160x160 physical meter drawing area, shifted back by 80 meters
+            // This is so massive it guarantees no node can ever fall outside the painted area
+            float physicalAreaMeters = 160f;
+            float drawStartX = -(physicalAreaMeters / 2f) * PPM;
+            float drawStartY = -(physicalAreaMeters / 2f) * PPM;
+            float drawWidth = physicalAreaMeters * PPM;
+            float drawHeight = physicalAreaMeters * PPM;
 
-            // Node 1 Gradient
-            int c1 = getColorForRssi(liveRssi1, 180);
-            heatPaint.setShader(new RadialGradient(n1x, n1y, gradRadius, c1, Color.TRANSPARENT, Shader.TileMode.CLAMP));
-            canvas.drawCircle(n1x, n1y, gradRadius, heatPaint);
+            int GRID_RES = 60; // Slightly higher res grid for the massive area
 
-            // Node 2 Gradient
-            int c2 = getColorForRssi(liveRssi2, 180);
-            heatPaint.setShader(new RadialGradient(n2x, n2y, gradRadius, c2, Color.TRANSPARENT, Shader.TileMode.CLAMP));
-            canvas.drawCircle(n2x, n2y, gradRadius, heatPaint);
+            if (heatMapBitmap == null || heatMapBitmap.getWidth() != GRID_RES || heatMapBitmap.getHeight() != GRID_RES) {
+                heatMapBitmap = Bitmap.createBitmap(GRID_RES, GRID_RES, Bitmap.Config.ARGB_8888);
+                heatPixels = new int[GRID_RES * GRID_RES];
+            }
 
-            // Node 3 Gradient
-            int c3 = getColorForRssi(liveRssi3, 180);
-            heatPaint.setShader(new RadialGradient(n3x, n3y, gradRadius, c3, Color.TRANSPARENT, Shader.TileMode.CLAMP));
-            canvas.drawCircle(n3x, n3y, gradRadius, heatPaint);
+            float stepX = drawWidth / GRID_RES;
+            float stepY = drawHeight / GRID_RES;
 
-            // 3. DRAW MESH GEOMETRY & FIXED SIZE UI
+            // LOWERED EXPONENT: 10f instead of 15f.
+            // This causes the signal to decay much slower, creating huge green and yellow zones.
+            float pathLossExp = 10f;
 
-            // Get current scale to counteract zoom for UI elements
-            float[] values = new float[9];
-            transformMatrix.getValues(values);
-            float currentScale = values[Matrix.MSCALE_X];
-            if (currentScale == 0) currentScale = 1f;
+            float expectedAtN1 = -35f - (pathLossExp * (float) Math.log10(Math.max(0.1f, r1)));
+            float expectedAtN2 = -35f - (pathLossExp * (float) Math.log10(Math.max(0.1f, r2)));
+            float expectedAtN3 = -35f - (pathLossExp * (float) Math.log10(Math.max(0.1f, r3)));
 
-            linePaint.setStrokeWidth(5f / currentScale);
+            float warp1 = liveRssi1 - expectedAtN1;
+            float warp2 = liveRssi2 - expectedAtN2;
+            float warp3 = liveRssi3 - expectedAtN3;
 
-            Path path = new Path();
-            path.moveTo(n1x, n1y); path.lineTo(n2x, n2y); path.lineTo(n3x, n3y); path.close();
-            canvas.drawPath(path, linePaint);
+            for (int i = 0; i < heatPixels.length; i++) {
+                int gridX = i % GRID_RES;
+                int gridY = i / GRID_RES;
 
-            // Hardware Nodes
-            float nodeRadius = 25f / currentScale;
-            canvas.drawCircle(n1x, n1y, nodeRadius, nodeDotPaint);
-            canvas.drawCircle(n2x, n2y, nodeRadius, nodeDotPaint);
-            canvas.drawCircle(n3x, n3y, nodeRadius, nodeDotPaint);
+                float px = drawStartX + (gridX * stepX);
+                float py = drawStartY + (gridY * stepY);
 
-            textPaint.setTextSize(40f / currentScale);
-            float nodeTextOffsetX = 30f / currentScale;
-            float nodeTextOffsetY = 40f / currentScale;
+                float dRouter = Math.max(0.1f, (float) Math.sqrt(Math.pow(px - rx, 2) + Math.pow(py - ry, 2)) / PPM);
+                float d1 = Math.max(0.1f, (float) Math.sqrt(Math.pow(px - n1x, 2) + Math.pow(py - n1y, 2)) / PPM);
+                float d2 = Math.max(0.1f, (float) Math.sqrt(Math.pow(px - n2x, 2) + Math.pow(py - n2y, 2)) / PPM);
+                float d3 = Math.max(0.1f, (float) Math.sqrt(Math.pow(px - n3x, 2) + Math.pow(py - n3y, 2)) / PPM);
 
-            canvas.drawText("N1", n1x - nodeTextOffsetX, n1y - nodeTextOffsetY, textPaint);
-            canvas.drawText("N2", n2x - nodeTextOffsetX, n2y - nodeTextOffsetY, textPaint);
-            canvas.drawText("N3", n3x - nodeTextOffsetX, n3y - nodeTextOffsetY, textPaint);
+                float theoreticalRssi = -35f - (pathLossExp * (float) Math.log10(dRouter));
 
-            // Router Anchor
-            float routerDotRadius = 20f / currentScale;
-            Paint routerDot = new Paint(); routerDot.setColor(Color.WHITE); routerDot.setStyle(Paint.Style.FILL);
-            canvas.drawCircle(rx, ry, routerDotRadius, routerDot);
+                float w1 = 1f / (d1 * d1);
+                float w2 = 1f / (d2 * d2);
+                float w3 = 1f / (d3 * d3);
+                float totalWeight = w1 + w2 + w3;
 
-            float routerRingRadius = 35f / currentScale;
-            Paint routerRing = new Paint(); routerRing.setColor(Color.GREEN); routerRing.setStyle(Paint.Style.STROKE); routerRing.setStrokeWidth(6f / currentScale);
-            canvas.drawCircle(rx, ry, routerRingRadius, routerRing);
+                float interpolatedWarp = (warp1 * w1 + warp2 * w2 + warp3 * w3) / totalWeight;
+                float finalRssi = theoreticalRssi + interpolatedWarp;
 
-            float routerTextOffsetX = 60f / currentScale;
-            float routerTextOffsetY = 50f / currentScale;
-            canvas.drawText("ROUTER", rx - routerTextOffsetX, ry - routerTextOffsetY, textPaint);
+                // Apply RAG Palette with 200 alpha to blend slightly with the background void
+                heatPixels[i] = getColorForRssi(finalRssi, 200);
+            }
+
+            heatMapBitmap.setPixels(heatPixels, 0, GRID_RES, 0, 0, GRID_RES, GRID_RES);
+
+            Paint bmpPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
+            canvas.drawBitmap(heatMapBitmap, null, new android.graphics.RectF(drawStartX, drawStartY, drawStartX + drawWidth, drawStartY + drawHeight), bmpPaint);
+            // =========================================================================
+
+            // 3. OVERLAYS & UI ELEMENTS
+            float[] ringMeters = {2.0f, 5.0f, 10.0f};
+            int[] ringAlpha = {100, 60, 30};
+            for (int i = 0; i < ringMeters.length; i++) {
+                contourPaint.setColor(Color.argb(ringAlpha[i], 255, 255, 255));
+                contourPaint.setStrokeWidth(2.5f / currentScale);
+                canvas.drawCircle(rx, ry, ringMeters[i] * PPM, contourPaint);
+            }
+
+            linePaint.setStrokeWidth(4f / currentScale);
+            Path tri = new Path();
+            tri.moveTo(n1x, n1y);
+            tri.lineTo(n2x, n2y);
+            tri.lineTo(n3x, n3y);
+            tri.close();
+            canvas.drawPath(tri, linePaint);
+
+            optimalLinePaint.setStrokeWidth(3f / currentScale);
+            canvas.drawLine(rx, ry, optX, optY, optimalLinePaint);
+
+            drawGlowingNode(canvas, n1x, n1y, liveRssi1, "N1", currentScale, pulse);
+            drawGlowingNode(canvas, n2x, n2y, liveRssi2, "N2", currentScale, pulse);
+            drawGlowingNode(canvas, n3x, n3y, liveRssi3, "N3", currentScale, pulse);
+
+            drawRouter(canvas, rx, ry, currentScale, pulse);
+            drawTarget(canvas, optX, optY, currentScale, pulse);
 
             canvas.restore();
+            postInvalidateDelayed(32);
+        }
+
+        // --- DRAWING HELPERS ---
+
+        private void drawNodePull(Canvas canvas, float nx, float ny, float rssi, float radius) {
+            // Get the color for this node's actual signal strength, but softer (160 alpha)
+            int nodeColor = getColorForRssi(rssi, 160);
+            int midColor = Color.argb(60, Color.red(nodeColor), Color.green(nodeColor), Color.blue(nodeColor));
+
+            int[] pullColors = {nodeColor, midColor, Color.TRANSPARENT};
+            float[] pullStops = {0f, 0.4f, 1.0f};
+
+            heatPaint.setShader(new RadialGradient(nx, ny, radius, pullColors, pullStops, Shader.TileMode.CLAMP));
+            canvas.drawCircle(nx, ny, radius, heatPaint);
+        }
+
+        private void drawCleanNode(Canvas canvas, float cx, float cy, float rssi, String label, float scale) {
+            int peakColor = getColorForRssi(rssi, 255);
+
+            Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+            p.setStyle(Paint.Style.FILL);
+            p.setColor(Color.WHITE);
+            canvas.drawCircle(cx, cy, 14f / scale, p);
+
+            Paint ring = new Paint(Paint.ANTI_ALIAS_FLAG);
+            ring.setColor(peakColor);
+            ring.setStyle(Paint.Style.STROKE);
+            ring.setStrokeWidth(5f / scale);
+            canvas.drawCircle(cx, cy, 22f / scale, ring);
+
+            textPaint.setTextSize(36f / scale);
+            textPaint.setColor(Color.WHITE);
+            canvas.drawText(label, cx - (18f / scale), cy - (35f / scale), textPaint);
+        }
+
+        private void drawRouter(Canvas canvas, float rx, float ry, float scale, float pulse) {
+            final int GREEN = Color.parseColor("#00FF96");
+            Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+            p.setStyle(Paint.Style.FILL);
+
+            p.setColor(Color.WHITE);
+            canvas.drawCircle(rx, ry, 16f / scale, p);
+
+            Paint ring = new Paint(Paint.ANTI_ALIAS_FLAG);
+            ring.setColor(GREEN);
+            ring.setStyle(Paint.Style.STROKE);
+            ring.setStrokeWidth(8f / scale);
+            canvas.drawCircle(rx, ry, (25f + pulse * 10f) / scale, ring);
+
+            textPaint.setTextSize(34f / scale);
+            textPaint.setColor(GREEN);
+            canvas.drawText("ROUTER", rx - (52f / scale), ry - (50f / scale), textPaint);
+        }
+
+        private void drawGlowingNode(Canvas canvas, float cx, float cy, float rssi, String label, float scale, float pulse) {
+            int peakColor = getColorForRssi(rssi, 255);
+            int r = Color.red(peakColor), g = Color.green(peakColor), b = Color.blue(peakColor);
+
+            Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+            p.setStyle(Paint.Style.FILL);
+
+            // Outer soft glow — pulses gently
+            int outerAlpha = (int) (20 + pulse * 18);
+            p.setColor(Color.argb(outerAlpha, r, g, b));
+            canvas.drawCircle(cx, cy, 70f / scale, p);
+
+            // Mid glow
+            p.setColor(Color.argb(55, r, g, b));
+            canvas.drawCircle(cx, cy, 44f / scale, p);
+
+            // Inner glow
+            p.setColor(Color.argb(100, r, g, b));
+            canvas.drawCircle(cx, cy, 26f / scale, p);
+
+            // Solid white core
+            p.setColor(Color.WHITE);
+            canvas.drawCircle(cx, cy, 14f / scale, p);
+
+            // Colored ring
+            Paint ring = new Paint(Paint.ANTI_ALIAS_FLAG);
+            ring.setColor(peakColor);
+            ring.setStyle(Paint.Style.STROKE);
+            ring.setStrokeWidth(4f / scale);
+            canvas.drawCircle(cx, cy, 22f / scale, ring);
+
+            // Node label above
+            textPaint.setTextSize(38f / scale);
+            textPaint.setColor(Color.WHITE);
+            canvas.drawText(label, cx - (18f / scale), cy - (35f / scale), textPaint);
+
+            // RSSI value below in the node's signal color
+            textPaint.setTextSize(26f / scale);
+            textPaint.setColor(peakColor);
+            canvas.drawText(String.format(Locale.US, "%.0fdBm", rssi), cx - (36f / scale), cy + (52f / scale), textPaint);
+        }
+
+        private void drawTarget(Canvas canvas, float optX, float optY, float scale, float pulse) {
+            Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+            p.setStyle(Paint.Style.FILL);
+            p.setColor(Color.CYAN);
+            canvas.drawCircle(optX, optY, 8f / scale, p);
+
+            optimalRingPaint.setStrokeWidth(4f / scale);
+            optimalRingPaint.setColor(Color.CYAN);
+            canvas.drawCircle(optX, optY, 30f / scale, optimalRingPaint);
+
+            textPaint.setTextSize(30f / scale);
+            textPaint.setColor(Color.CYAN);
+            canvas.drawText("TARGET", optX - (50f / scale), optY - (45f / scale), textPaint);
         }
 
         // --- MATH UTILS ---
-        private float rssiToDistance(float rssi) {
-            float A = -40f;
-            float n = 2.5f;
-            return (float) Math.pow(10, (A - rssi) / (10 * n));
+
+        public float[] estimateRouterPosition(float m_n1x, float m_n1y, float m_n2x, float m_n2y, float m_n3x, float m_n3y) {
+
+            // 1. MATCH THE PATH LOSS FORMULA TO YOUR TEXT READOUT
+            // This ensures the visual map and the text distance readout are perfectly synced
+            float rr1 = liveRssi1 <= -90 ? 20.0f : (float) Math.pow(10, (-46.5f - liveRssi1) / 31.9f);
+            float rr2 = liveRssi2 <= -90 ? 20.0f : (float) Math.pow(10, (-46.5f - liveRssi2) / 31.9f);
+            float rr3 = liveRssi3 <= -90 ? 20.0f : (float) Math.pow(10, (-46.5f - liveRssi3) / 31.9f);
+
+            // 2. ITERATIVE LEAST SQUARES SOLVER
+            // Start the router dead center in the mesh
+            float rx = (m_n1x + m_n2x + m_n3x) / 3f;
+            float ry = (m_n1y + m_n2y + m_n3y) / 3f;
+
+            float learningRate = 0.05f;
+
+            // Run 50 quick simulation steps to let the "rubber bands" pull the router into place
+            for (int i = 0; i < 50; i++) {
+                // Current guessed distances
+                float d1 = (float) Math.sqrt(Math.pow(rx - m_n1x, 2) + Math.pow(ry - m_n1y, 2));
+                float d2 = (float) Math.sqrt(Math.pow(rx - m_n2x, 2) + Math.pow(ry - m_n2y, 2));
+                float d3 = (float) Math.sqrt(Math.pow(rx - m_n3x, 2) + Math.pow(ry - m_n3y, 2));
+
+                // Prevent division by zero
+                d1 = Math.max(0.01f, d1);
+                d2 = Math.max(0.01f, d2);
+                d3 = Math.max(0.01f, d3);
+
+                // Error = Actual physical distance - Target calculated radius
+                float err1 = d1 - rr1;
+                float err2 = d2 - rr2;
+                float err3 = d3 - rr3;
+
+                // Move the X/Y coordinates toward the point of least tension
+                rx -= learningRate * ((err1 / d1) * (rx - m_n1x) + (err2 / d2) * (rx - m_n2x) + (err3 / d3) * (rx - m_n3x));
+                ry -= learningRate * ((err1 / d1) * (ry - m_n1y) + (err2 / d2) * (ry - m_n2y) + (err3 / d3) * (ry - m_n3y));
+            }
+
+            return new float[]{rx, ry};
         }
 
-        private float[] estimateRouterPosition(float n1x, float n1y, float n2x, float n2y, float n3x, float n3y) {
-            float r1 = rssiToDistance(liveRssi1); float r2 = rssiToDistance(liveRssi2); float r3 = rssiToDistance(liveRssi3);
-            float A = 2*(n2x - n1x); float B = 2*(n2y - n1y);
-            float C = r1*r1 - r2*r2 - n1x*n1x + n2x*n2x - n1y*n1y + n2y*n2y;
-            float D = 2*(n3x - n1x); float E = 2*(n3y - n1y);
-            float F = r1*r1 - r3*r3 - n1x*n1x + n3x*n3x - n1y*n1y + n3y*n3y;
-            float denom = (A*E - B*D);
-            if (Math.abs(denom) < 1e-6) return new float[]{(n1x+n2x+n3x)/3f, (n1y+n2y+n3y)/3f};
-            float x = (C*E - B*F) / denom; float y = (A*F - C*D) / denom;
-            return new float[]{x, y};
-        }
-
-        // True Wi-Fi Signal Colors (Dark Green = Strong, Dark Red = Weak)
         private int getColorForRssi(float rssi, int alpha) {
-            float min = -95f; float max = -30f;
+            // Anything stronger than -55dBm is now PURE GREEN
+            float min = -90f, max = -55f;
             float t = (rssi - min) / (max - min);
             t = Math.max(0f, Math.min(1f, t));
 
-            int[] colors = {
-                    Color.parseColor("#8B0000"), // Dark Red (-95 dBm)
-                    Color.parseColor("#FF0000"), // Red
-                    Color.parseColor("#FF8C00"), // Orange
-                    Color.parseColor("#FFFF00"), // Yellow
-                    Color.parseColor("#00E676"), // Bright Green (-45 dBm)
-                    Color.parseColor("#004D00")  // Dark Green (-30 dBm)
+            int[] palette = {
+                    Color.parseColor("#1A0000"),   // -90 (Dark Red Void)
+                    Color.parseColor("#FF0000"),   // -81 (Red)
+                    Color.parseColor("#FF8800"),   // -72 (Orange)
+                    Color.parseColor("#FFFF00"),   // -63 (Yellow)
+                    Color.parseColor("#00FF00")    // -55 and above (Pure Green)
             };
 
-            float scaled = t * (colors.length - 1);
-            int index = (int) scaled;
-            float fraction = scaled - index;
-            if (index >= colors.length - 1) return colors[colors.length - 1];
+            float scaled = t * (palette.length - 1);
+            int idx = (int) scaled;
+            float frac = scaled - idx;
 
-            int c1 = colors[index]; int c2 = colors[index + 1];
-            int r = (int)(Color.red(c1) + fraction * (Color.red(c2) - Color.red(c1)));
-            int g = (int)(Color.green(c1) + fraction * (Color.green(c2) - Color.green(c1)));
-            int b = (int)(Color.blue(c1) + fraction * (Color.blue(c2) - Color.blue(c1)));
+            if (idx >= palette.length - 1) {
+                int c = palette[palette.length - 1];
+                return Color.argb(alpha, Color.red(c), Color.green(c), Color.blue(c));
+            }
+
+            int ca = palette[idx], cb = palette[idx + 1];
+            int r = (int) (Color.red(ca) + frac * (Color.red(cb) - Color.red(ca)));
+            int g = (int) (Color.green(ca) + frac * (Color.green(cb) - Color.green(ca)));
+            int b = (int) (Color.blue(ca) + frac * (Color.blue(cb) - Color.blue(ca)));
             return Color.argb(alpha, r, g, b);
         }
     }
 }
+// =========================================================================
+// END OF REPLACEMENT CLASS
+// =========================================================================}
