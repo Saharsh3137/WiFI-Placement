@@ -874,11 +874,40 @@ public class MainActivity extends AppCompatActivity {
             // ================================================================
             // 2. ACCURATE RF HEATMAP – Log-distance path loss + IDW warp
             // ================================================================
-            float areaM   = 160f;
-            float dStartX = -(areaM / 2f) * PPM;
-            float dStartY = -(areaM / 2f) * PPM;
-            float dWidth  = areaM * PPM;
-            float dHeight = areaM * PPM;
+            float dStartX = 0f, dStartY = 0f, dWidth = 0f, dHeight = 0f;
+            android.graphics.Matrix inverse = new android.graphics.Matrix();
+            if (transformMatrix.invert(inverse)) {
+                float[] screenCorners = {
+                    0, 0,
+                    width, 0,
+                    width, height,
+                    0, height
+                };
+                inverse.mapPoints(screenCorners);
+                float minX = screenCorners[0], minY = screenCorners[1];
+                float maxX = screenCorners[0], maxY = screenCorners[1];
+                for (int i = 2; i < 8; i += 2) {
+                    if (screenCorners[i] < minX) minX = screenCorners[i];
+                    if (screenCorners[i] > maxX) maxX = screenCorners[i];
+                    if (screenCorners[i + 1] < minY) minY = screenCorners[i + 1];
+                    if (screenCorners[i + 1] > maxY) maxY = screenCorners[i + 1];
+                }
+
+                // Add a small margin to hide edges during rotation rendering
+                float marginX = (maxX - minX) * 0.2f;
+                float marginY = (maxY - minY) * 0.2f;
+
+                dStartX = minX - marginX;
+                dStartY = minY - marginY;
+                dWidth = (maxX - minX) + 2 * marginX;
+                dHeight = (maxY - minY) + 2 * marginY;
+            } else {
+                float areaM = 160f;
+                dStartX = -(areaM / 2f) * PPM;
+                dStartY = -(areaM / 2f) * PPM;
+                dWidth  = areaM * PPM;
+                dHeight = areaM * PPM;
+            }
 
             if (heatMapBitmap == null
                     || heatMapBitmap.getWidth() != GRID_RES
@@ -890,10 +919,14 @@ public class MainActivity extends AppCompatActivity {
             float stepX = dWidth  / GRID_RES;
             float stepY = dHeight / GRID_RES;
 
-            // Expected RSSI at each sensor node (theoretical, from path-loss model)
-            float expN1 = TX_REF_DBM - (PATH_LOSS_EXP * (float) Math.log10(Math.max(0.1f, r1)));
-            float expN2 = TX_REF_DBM - (PATH_LOSS_EXP * (float) Math.log10(Math.max(0.1f, r2)));
-            float expN3 = TX_REF_DBM - (PATH_LOSS_EXP * (float) Math.log10(Math.max(0.1f, r3)));
+            float dN1 = Math.max(0.1f, (float) Math.sqrt((n1x - rx) * (n1x - rx) + (n1y - ry) * (n1y - ry)) / PPM);
+            float dN2 = Math.max(0.1f, (float) Math.sqrt((n2x - rx) * (n2x - rx) + (n2y - ry) * (n2y - ry)) / PPM);
+            float dN3 = Math.max(0.1f, (float) Math.sqrt((n3x - rx) * (n3x - rx) + (n3y - ry) * (n3y - ry)) / PPM);
+
+            // Expected RSSI at each sensor node based on dynamic on-screen geometry
+            float expN1 = TX_REF_DBM - (PATH_LOSS_EXP * (float) Math.log10(dN1));
+            float expN2 = TX_REF_DBM - (PATH_LOSS_EXP * (float) Math.log10(dN2));
+            float expN3 = TX_REF_DBM - (PATH_LOSS_EXP * (float) Math.log10(dN3));
 
             // Environmental warp = actual measured − model prediction
             float warp1 = (liveRssi1 != 0f) ? liveRssi1 - expN1 : 0f;
@@ -915,14 +948,14 @@ public class MainActivity extends AppCompatActivity {
                 // Base RSSI from log-distance path-loss model
                 float baseRssi = TX_REF_DBM - (PATH_LOSS_EXP * (float) Math.log10(distRouter));
 
-                // IDW (power 3) environmental correction from measured nodes
+                // IDW (power 2) environmental correction from measured nodes for wider influence regions
                 float dd1 = Math.max(0.1f, (float) Math.sqrt((px - n1x) * (px - n1x) + (py - n1y) * (py - n1y)) / PPM);
                 float dd2 = Math.max(0.1f, (float) Math.sqrt((px - n2x) * (px - n2x) + (py - n2y) * (py - n2y)) / PPM);
                 float dd3 = Math.max(0.1f, (float) Math.sqrt((px - n3x) * (px - n3x) + (py - n3y) * (py - n3y)) / PPM);
 
-                float iw1 = 1f / (dd1 * dd1 * dd1);
-                float iw2 = 1f / (dd2 * dd2 * dd2);
-                float iw3 = 1f / (dd3 * dd3 * dd3);
+                float iw1 = 1f / (dd1 * dd1);
+                float iw2 = 1f / (dd2 * dd2);
+                float iw3 = 1f / (dd3 * dd3);
                 float wTotal = iw1 + iw2 + iw3;
 
                 float envWarp = (warp1 * iw1 + warp2 * iw2 + warp3 * iw3) / wTotal;
@@ -986,8 +1019,8 @@ public class MainActivity extends AppCompatActivity {
             drawGlowingNode(canvas, n1x, n1y, liveRssi1, "N1", currentScale, pulse);
             drawGlowingNode(canvas, n2x, n2y, liveRssi2, "N2", currentScale, pulse);
             drawGlowingNode(canvas, n3x, n3y, liveRssi3, "N3", currentScale, pulse);
-            drawRouter(canvas, rx, ry, currentScale, pulse);
-            drawTarget(canvas, optX, optY, currentScale, slowPulse);
+            drawTarget(canvas, rx, ry, currentScale, slowPulse);
+            drawRouter(canvas, optX, optY, currentScale, pulse);
 
             canvas.restore();
 
